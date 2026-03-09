@@ -1,0 +1,288 @@
+Goal of This Exercise
+You learn how to:
+1.	Remove project creation permission from normal users
+2.	Create groups
+3.	Add users to groups
+4.	Create a project
+5.	Assign project administrator
+6.	Give developer write access
+7.	Give QA read-only access
+This simulates a real company structure.
+Example company structure:
+Role	Permissions
+Admin	manage cluster
+Leader	manage project
+Developers	deploy apps
+QA	only view
+________________________________________
+Step 1: Start the Lab Environment
+Command:
+lab start auth-rbac
+Purpose:
+•	prepares the OpenShift cluster
+•	ensures required users and resources exist
+________________________________________
+Step 2: Login as Cluster Administrator
+oc login -u admin -p redhatocp https://api.ocp4.example.com:6443
+Explanation:
+•	oc login → authenticate to cluster
+•	admin → cluster administrator
+•	redhatocp → password
+Only cluster administrators can modify cluster-level RBAC.
+________________________________________
+Step 3: Find Who Can Create Projects
+Command:
+oc get clusterrolebinding -o wide | grep -E 'ROLE|self-provisioner'
+Example output:
+self-provisioners ClusterRole/self-provisioner system:authenticated:oauth
+Meaning:
+ClusterRoleBinding: self-provisioners
+Role: self-provisioner
+Group: system:authenticated:oauth
+________________________________________
+What is self-provisioner?
+self-provisioner role allows users to create projects.
+Example command users can run:
+oc new-project myproject
+________________________________________
+system:authenticated:oauth Group
+This is a virtual group.
+It contains:
+all authenticated users
+Meaning:
+everyone who logs in
+So by default:
+ALL users can create projects
+________________________________________
+Step 4: Verify the Role Binding
+Command:
+oc describe clusterrolebindings self-provisioners
+Output shows:
+Role: self-provisioner
+Group: system:authenticated:oauth
+Meaning:
+All logged-in users can create projects
+________________________________________
+Step 5: Remove Project Creation Privilege
+Command:
+oc adm policy remove-cluster-role-from-group \
+self-provisioner system:authenticated:oauth
+Explanation:
+Remove role → self-provisioner
+From group → system:authenticated:oauth
+Result:
+normal users cannot create projects anymore
+Only cluster admins can create projects now.
+________________________________________
+Step 6: Verify Role Binding Removed
+Command:
+oc describe clusterrolebindings self-provisioners
+Expected output:
+NotFound
+Meaning:
+role binding deleted successfully
+________________________________________
+Step 7: Confirm No Other Binding Exists
+Command:
+oc get clusterrolebinding -o wide | grep -E 'ROLE|self-provisioner'
+Expected result:
+no results
+So:
+self-provisioner role no longer assigned
+________________________________________
+Step 8: Test With Normal User
+Login as leader:
+oc login -u leader -p redhat
+Try creating project:
+oc new-project test
+Result:
+Error: Forbidden
+Meaning:
+leader cannot create project
+RBAC working correctly.
+________________________________________
+Step 9: Admin Creates Project
+Login again as admin:
+oc login -u admin -p redhatocp
+Create project:
+oc new-project auth-rbac
+Meaning:
+create namespace/project called auth-rbac
+________________________________________
+Step 10: Assign Project Administrator
+Command:
+oc policy add-role-to-user admin leader
+Explanation:
+Role: admin
+User: leader
+Project: auth-rbac
+Meaning:
+leader becomes project administrator
+Leader can now:
+manage deployments
+add roles
+manage users
+But only inside auth-rbac project.
+________________________________________
+Step 11: Create Developer Group
+Command:
+oc adm groups new dev-group
+Meaning:
+create group called dev-group
+________________________________________
+Step 12: Add Developer to Group
+Command:
+oc adm groups add-users dev-group developer
+Meaning:
+dev-group
+   └ developer
+________________________________________
+Step 13: Create QA Group
+Command:
+oc adm groups new qa-group
+________________________________________
+Step 14: Add QA User
+oc adm groups add-users qa-group qa-engineer
+Group structure now:
+dev-group
+   └ developer
+
+qa-group
+   └ qa-engineer
+________________________________________
+Step 15: Verify Groups
+Command:
+oc get groups
+Example output:
+dev-group     developer
+qa-group      qa-engineer
+________________________________________
+Step 16: Leader Assigns Permissions
+Login as leader:
+oc login -u leader -p redhat
+Leader is project admin, so can assign roles.
+________________________________________
+Step 17: Give Developers Write Access
+Command:
+oc policy add-role-to-group edit dev-group
+Explanation:
+Role: edit
+Group: dev-group
+Project: auth-rbac
+Meaning:
+developers can create apps
+developers can modify deployments
+developers can delete resources
+________________________________________
+Step 18: Give QA Read Access
+Command:
+oc policy add-role-to-group view qa-group
+Meaning:
+QA can only view resources
+Cannot:
+create
+modify
+delete
+________________________________________
+Step 19: Verify Role Bindings
+Command:
+oc get rolebindings -o wide
+Example output:
+admin     ClusterRole/admin   leader
+edit      ClusterRole/edit    dev-group
+view      ClusterRole/view    qa-group
+Meaning:
+Role	Assigned To
+admin	leader
+edit	dev-group
+view	qa-group
+________________________________________
+Step 20: Test Developer Permissions
+Login as developer:
+oc login -u developer -p developer
+Deploy application:
+oc new-app --name httpd \
+registry.ocp4.example.com:8443/rhscl/httpd-24-rhel7
+Explanation:
+creates deployment
+creates service
+deploys Apache HTTP Server
+This works because developer has edit role.
+________________________________________
+Step 21: Test Admin Privileges
+Developer tries:
+oc policy add-role-to-user edit qa-engineer
+Result:
+Forbidden
+Meaning:
+developer cannot manage permissions
+Because edit role cannot manage RBAC.
+Only admin role can.
+________________________________________
+Step 22: Test QA Permissions
+Login as QA user:
+oc login -u qa-engineer -p redhat
+Try scaling deployment:
+oc scale deployment httpd --replicas 3
+Result:
+Forbidden
+Because QA has view role only.
+QA can only run commands like:
+oc get pods
+oc get services
+oc describe deployment
+________________________________________
+Step 23: Restore Default Behavior
+Login as admin:
+oc login -u admin -p redhatocp
+Restore project creation permission:
+oc adm policy add-cluster-role-to-group \
+--rolebinding-name self-provisioners \
+self-provisioner system:authenticated:oauth
+Meaning:
+all authenticated users can create projects again
+________________________________________
+Final RBAC Structure
+Cluster
+ │
+ ├ admin
+ │
+Project: auth-rbac
+ │
+ ├ leader → admin role
+ │
+ ├ dev-group → edit role
+ │     └ developer
+ │
+ └ qa-group → view role
+       └ qa-engineer
+________________________________________
+Key Commands to Remember (EX280 Important)
+Remove project creation
+oc adm policy remove-cluster-role-from-group
+________________________________________
+Restore project creation
+oc adm policy add-cluster-role-to-group
+________________________________________
+Create group
+oc adm groups new group-name
+________________________________________
+Add user to group
+oc adm groups add-users group-name user
+________________________________________
+Assign role to user
+oc policy add-role-to-user role user
+________________________________________
+Assign role to group
+oc policy add-role-to-group role group
+________________________________________
+Real-World Architecture
+Companies use this structure:
+Cluster Admins
+    │
+Project Admin (team lead)
+    │
+Developers → edit role
+QA → view role
+This provides secure multi-team collaboration.
+
