@@ -1,0 +1,307 @@
+Lab: Manage Declarative Resources
+Deploy and update applications from resource manifests that are parameterized for different target environments.
+Outcomes
+Deploy an application by using Kustomize from provided files.
+Apply an application update that changes a deployment.
+Deploy an overlay of the application that increases the number of replicas.
+
+1️⃣ Start the Lab Environment
+Command
+lab start declarative-review
+What it does
+The lab utility prepares the OpenShift training environment.
+It ensures:
+•	OpenShift cluster is running
+•	API server is reachable
+•	lab resources are reset
+This prevents conflicts with previous labs.
+________________________________________
+2️⃣ Clone the Git Repository
+Move to lab directory
+cd ~/DO280/labs/declarative-review
+Clone repository
+git clone https://git.ocp4.example.com/developer/declarative-review.git --branch v1.1.0
+Explanation
+Part	Meaning
+git clone	downloads repository
+--branch v1.1.0	clone specific version
+repository URL	location of application source
+The repository uses Git branches as application versions.
+Example versions:
+Branch	Version
+v1.1.0	initial version
+v1.1.1	image update
+production overlay	scaling change
+________________________________________
+3️⃣ Examine Repository Structure
+Command
+tree
+Output structure
+base
+ ├ database
+ │   ├ configmap.yaml
+ │   ├ deployment.yaml
+ │   ├ secret.yaml
+ │   ├ service.yaml
+ │   └ kustomization.yaml
+ │
+ ├ exoplanets
+ │   ├ configmap.yaml
+ │   ├ deployment.yaml
+ │   ├ secret.yaml
+ │   ├ service.yaml
+ │   ├ route.yaml
+ │   └ kustomization.yaml
+ │
+ └ kustomization.yaml
+
+overlays
+ └ production
+     ├ kustomization.yaml
+     └ patch-replicas.yaml
+________________________________________
+4️⃣ Understanding Repository Design
+This repository follows Kustomize architecture.
+Two main parts exist:
+Base
+Common configuration for all environments.
+base/
+Contains:
+Component	Purpose
+database	database resources
+exoplanets	web application
+________________________________________
+Overlay
+Environment-specific configuration.
+overlays/production
+Overlay modifies base resources.
+Example:
+•	production uses more replicas
+________________________________________
+5️⃣ Examine Base Kustomization
+File:
+base/kustomization.yaml
+Content:
+kind: Kustomization
+resources:
+- database
+- exoplanets
+Explanation
+This file tells Kustomize:
+Use resources from:
+base/database
+base/exoplanets
+Kustomize merges them into a single deployment manifest set.
+________________________________________
+6️⃣ Login to OpenShift
+Command
+oc login -u developer -p developer https://api.ocp4.example.com:6443
+Explanation:
+Option	Meaning
+oc	OpenShift CLI
+login	authenticate
+-u developer	username
+-p developer	password
+After login you can deploy resources to the cluster.
+________________________________________
+7️⃣ Create Project (Namespace)
+Command
+oc new-project declarative-review
+Explanation
+Creates a Kubernetes namespace:
+declarative-review
+All application resources will run inside this namespace.
+________________________________________
+8️⃣ Deploy Application Using Kustomize
+Command
+oc apply -k base
+Explanation
+Option	Meaning
+apply	create or update resources
+-k	apply Kustomize directory
+Kustomize performs:
+1.	reads kustomization.yaml
+2.	collects all resource YAML files
+3.	merges them
+4.	sends final manifests to Kubernetes API
+________________________________________
+9️⃣ Resources Created
+Example output:
+configmap/database
+configmap/exoplanets
+secret/database
+secret/exoplanets
+service/database
+service/exoplanets
+deployment/database
+deployment/exoplanets
+route/exoplanets
+Resource roles
+Resource	Purpose
+ConfigMap	configuration data
+Secret	sensitive credentials
+Service	internal networking
+Deployment	manages pods
+Route	exposes app externally
+________________________________________
+🔟 Monitor Deployment
+Command
+watch oc get all
+Explanation
+Part	Meaning
+watch	run repeatedly
+oc get all	show all resources
+Example output:
+pod/database-xxxx
+pod/exoplanets-xxxx
+Pods must reach:
+STATUS = Running
+READY = 1/1
+________________________________________
+1️⃣1️⃣ Access the Application
+Open browser:
+http://exoplanets-declarative-review.apps.ocp4.example.com
+The browser shows:
+version v1.1.0
+________________________________________
+1️⃣2️⃣ Upgrade Application to v1.1.1
+Switch Git branch
+git checkout v1.1.1
+View changes
+git show
+Output shows:
+image: exoplanets:v1.1.0
+→
+image: exoplanets:v1.1.1
+Meaning
+The container image version changed.
+________________________________________
+1️⃣3️⃣ Deploy Updated Version
+Command
+oc apply -k base
+Kubernetes performs rolling update.
+Process:
+1.	new ReplicaSet created
+2.	new pods start
+3.	old pods terminated
+________________________________________
+Verify
+Open the browser again.
+Now it shows:
+v1.1.1
+________________________________________
+1️⃣4️⃣ Examine Production Overlay
+Directory:
+overlays/production
+Files:
+kustomization.yaml
+patch-replicas.yaml
+________________________________________
+Overlay kustomization.yaml
+File:
+overlays/production/kustomization.yaml
+Content:
+kind: Kustomization
+resources:
+- ../../base/
+
+patches:
+- path: patch-replicas.yaml
+  target:
+    kind: Deployment
+    name: exoplanets
+Meaning
+Overlay:
+1.	loads base configuration
+2.	applies a patch
+________________________________________
+Patch File
+patch-replicas.yaml
+Content:
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: exoplanets
+spec:
+  replicas: 2
+Effect
+This modifies the deployment:
+replicas: 1
+→
+replicas: 2
+Why?
+Production needs higher availability and scalability.
+________________________________________
+1️⃣5️⃣ Deploy Production Environment
+Create new project
+oc new-project declarative-review-production
+Deploy overlay
+oc apply -k overlays/production
+Kustomize performs:
+base resources
++
+production patch
+=
+final manifests
+________________________________________
+1️⃣6️⃣ Verify Production Deployment
+Command
+watch oc get all
+Example pods:
+pod/exoplanets-xxxxx
+pod/exoplanets-yyyyy
+Two replicas running.
+Deployment shows:
+deployment/exoplanets 2/2
+________________________________________
+1️⃣7️⃣ Production URL
+Open browser:
+http://exoplanets-declarative-review-production.apps.ocp4.example.com
+Application version:
+v1.1.1
+But now it runs two pods.
+________________________________________
+1️⃣8️⃣ Grade the Lab
+Command
+lab grade declarative-review
+Purpose:
+•	verifies resources
+•	confirms correct deployment
+•	checks overlay usage
+________________________________________
+1️⃣9️⃣ Clean Up Lab
+Command
+lab finish declarative-review
+This removes:
+•	projects
+•	deployments
+•	services
+•	routes
+Environment returns to clean state.
+________________________________________
+Key Concepts Learned
+Concept	Explanation
+Declarative deployment	infrastructure defined as YAML
+Kustomize	configuration management tool
+Base	shared configuration
+Overlay	environment-specific modifications
+Patch	modify base resource
+oc apply -k	deploy Kustomize directory
+________________________________________
+Real Production Workflow
+In real companies the workflow looks like this:
+Git repository
+     ↓
+Base Kubernetes manifests
+     ↓
+Environment overlays
+     ↓
+CI/CD pipeline
+     ↓
+OpenShift cluster deployment
+This approach enables:
+•	GitOps
+•	environment consistency
+•	automated updates
+•	scalable deployment
+
