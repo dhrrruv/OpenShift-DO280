@@ -1,0 +1,366 @@
+Defining and Applying Permissions with RBAC
+Objectives
+Define role-based access controls and apply permissions to users.
+. What is RBAC?
+RBAC = Role-Based Access Control
+It is the system used by Kubernetes and OpenShift to control who can do what in the cluster.
+It answers:
+Who can perform which action on which resource
+Example:
+User	Action	Resource
+developer	create	pods
+admin	delete	projects
+viewer	get	services
+________________________________________
+2. Authentication vs Authorization
+These are two different steps.
+Authentication
+Verifies identity
+Example:
+username + password
+token
+certificate
+Command example:
+oc login -u developer -p developer
+________________________________________
+Authorization
+Determines permissions.
+Example:
+Can the user create pods?
+Can the user delete projects?
+Authorization in OpenShift is implemented using RBAC.
+________________________________________
+3. RBAC Components
+RBAC works using three objects.
+Object	Meaning
+Rule	Defines allowed actions
+Role	Collection of rules
+Binding	Assigns role to user or group
+________________________________________
+3.1 Rule
+A rule defines:
+action + resource
+Example rule:
+create pods
+delete services
+get deployments
+Example structure:
+verbs: create
+resources: pods
+________________________________________
+3.2 Role
+A Role is a set of rules.
+Example role:
+Developer Role
+ ├ create pods
+ ├ update deployments
+ └ view services
+Users can have multiple roles.
+Example:
+developer = view + edit
+________________________________________
+3.3 Binding
+A Binding connects:
+User → Role
+Group → Role
+ServiceAccount → Role
+Example:
+developer → edit role
+This is called a RoleBinding.
+________________________________________
+4. RBAC Scope in OpenShift
+OpenShift RBAC has two levels.
+Level	Scope
+Cluster RBAC	entire cluster
+Local RBAC	single project
+________________________________________
+Cluster RBAC
+Applies to entire cluster.
+Objects:
+ClusterRole
+ClusterRoleBinding
+Example permissions:
+create nodes
+delete projects
+view cluster status
+________________________________________
+Local RBAC
+Applies to one namespace/project only.
+Objects:
+Role
+RoleBinding
+Example:
+developer can deploy apps
+but only inside project "myapp"
+________________________________________
+5. RBAC Hierarchy
+Cluster
+   │
+   ├ ClusterRole
+   ├ ClusterRoleBinding
+   │
+Project
+   │
+   ├ Role
+   └ RoleBinding
+Cluster roles can also be used inside projects.
+________________________________________
+6. Managing RBAC Using CLI
+Cluster administrators usually use:
+oc adm policy
+Project administrators use:
+oc policy
+________________________________________
+7. Add Cluster Role to User
+Command:
+oc adm policy add-cluster-role-to-user cluster-role username
+Example:
+oc adm policy add-cluster-role-to-user cluster-admin john
+Meaning:
+john → full cluster access
+Equivalent to superuser.
+________________________________________
+8. Remove Cluster Role
+Command:
+oc adm policy remove-cluster-role-from-user cluster-role username
+Example:
+oc adm policy remove-cluster-role-from-user cluster-admin john
+Meaning:
+john is no longer cluster admin
+________________________________________
+9. Check Permissions (who-can)
+Very useful command.
+oc adm policy who-can ACTION RESOURCE
+Example:
+oc adm policy who-can delete user
+Result shows:
+users/groups that can delete users
+Another example:
+oc adm policy who-can create pods
+________________________________________
+10. Default Roles in OpenShift
+OpenShift already provides many built-in roles.
+________________________________________
+cluster-admin
+superuser
+Can:
+create nodes
+delete projects
+manage cluster
+everything
+Command to assign:
+oc adm policy add-cluster-role-to-user cluster-admin username
+________________________________________
+admin
+Project administrator.
+Can:
+manage project resources
+create quotas
+add users
+But cannot manage the whole cluster.
+________________________________________
+edit
+Developer role.
+Can:
+create deployments
+create services
+update pods
+delete applications
+Cannot:
+change quotas
+manage permissions
+________________________________________
+view
+Read-only access.
+Can:
+view pods
+view services
+view deployments
+Cannot:
+create or modify resources
+________________________________________
+cluster-reader
+Read access to most cluster objects.
+Useful for:
+monitoring systems
+auditing
+________________________________________
+basic-user
+Allows users to:
+view projects
+view users
+Very minimal permissions.
+________________________________________
+self-provisioner
+Allows users to:
+create their own projects
+Example command:
+oc new-project myproject
+This works only if user has self-provisioner role.
+________________________________________
+11. Assign Role Inside a Project
+Project admins use:
+oc policy add-role-to-user
+Example:
+oc policy add-role-to-user edit dev -n wordpress
+Meaning:
+User: dev
+Role: edit
+Project: wordpress
+So dev can:
+create deployments
+create services
+update applications
+But only inside wordpress project.
+________________________________________
+12. Remove Project Role
+Command:
+oc policy remove-role-from-user role user -n project
+Example:
+oc policy remove-role-from-user edit dev -n wordpress
+________________________________________
+13. User Types in OpenShift
+OpenShift has three main user types.
+________________________________________
+1 Regular Users
+These are human users.
+Examples:
+developer
+admin
+student
+Represented by:
+User object
+________________________________________
+2 System Users
+Created automatically by OpenShift.
+Examples:
+system:admin
+system:node:node1
+system:openshift-registry
+Used internally by cluster components.
+All system users start with:
+system:
+________________________________________
+3 Service Accounts
+Used by applications and pods.
+Pods cannot login like users.
+Instead they use service accounts.
+Example:
+system:serviceaccount:namespace:account
+Example:
+system:serviceaccount:default:builder
+________________________________________
+View Service Accounts
+oc get sa
+Example output:
+builder
+default
+deployer
+________________________________________
+14. Groups in OpenShift
+A group is a collection of users.
+Instead of assigning roles to each user:
+user1
+user2
+user3
+You assign role to the group.
+Example:
+developers group
+________________________________________
+Create Group
+oc adm groups new lead-developers
+Group created.
+________________________________________
+Add User to Group
+oc adm groups add-users lead-developers user1
+Now:
+lead-developers
+ └ user1
+If the group has role edit, user1 automatically gets that role.
+________________________________________
+15. Authorization Flow
+Full process:
+User login
+     ↓
+Authentication
+     ↓
+User identity verified
+     ↓
+RBAC policies checked
+     ↓
+ClusterRoleBindings
+     +
+RoleBindings
+     ↓
+Permission granted or denied
+________________________________________
+16. Example Scenario
+User:
+developer
+Command:
+oc create deployment app
+System checks:
+Does developer have "create deployments" permission?
+If:
+RoleBinding → edit role
+Then:
+Allowed
+Otherwise:
+Forbidden
+Example error:
+Error from server (Forbidden)
+________________________________________
+17. Important RBAC Commands
+View roles
+oc get roles
+________________________________________
+View cluster roles
+oc get clusterroles
+________________________________________
+View role bindings
+oc get rolebindings
+________________________________________
+View cluster role bindings
+oc get clusterrolebindings
+________________________________________
+Describe role
+oc describe role edit
+________________________________________
+Check permissions
+oc adm policy who-can create pods
+________________________________________
+18. Simple RBAC Example
+Step 1: create project
+oc new-project demo
+________________________________________
+Step 2: create user role
+oc policy add-role-to-user edit developer -n demo
+Now developer can:
+create pods
+create deployments
+create services
+Inside demo project only.
+________________________________________
+19. Common EX280 Questions
+You may be asked to:
+Give user cluster-admin role
+Give developer edit access to project
+Check who can perform action
+Create groups and add users
+Typical commands:
+oc adm policy add-cluster-role-to-user
+oc policy add-role-to-user
+oc adm groups new
+oc adm groups add-users
+oc adm policy who-can
+________________________________________
+20. Quick Memory Trick
+Remember RBAC structure:
+Rule → defines permission
+Role → collection of rules
+Binding → attaches role to user
+And scope:
+ClusterRole → whole cluster
+Role → project only
+
+
