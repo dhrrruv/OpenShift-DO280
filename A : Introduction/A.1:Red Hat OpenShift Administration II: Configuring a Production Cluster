@@ -1,0 +1,256 @@
+Red Hat OpenShift Administration II (DO280) – Detailed Quick Explanation
+This course focuses on running and managing an OpenShift cluster in production.
+It teaches how to secure, manage users, control resources, manage networking, and update the cluster.
+Think of it like this:
+Course	Focus
+DO180	Deploy applications on OpenShift
+DO280	Manage and secure the OpenShift cluster
+________________________________________
+1. OpenShift Cluster Administration
+An OpenShift cluster administrator manages:
+•	Users and permissions
+•	Applications running in cluster
+•	Security policies
+•	Network access
+•	Resource usage
+•	Cluster updates
+Cluster admins make sure:
+•	Applications run reliably
+•	Teams cannot interfere with each other
+•	Cluster stays secure
+________________________________________
+2. Multi-Tenancy (Multiple Teams Using Same Cluster)
+What is Multi-Tenancy?
+Multi-tenancy means many teams share the same cluster safely.
+Example:
+Team	Application
+Dev Team	Web App
+QA Team	Testing Tools
+Data Team	Analytics
+Each team gets a separate project/namespace.
+In OpenShift
+Namespace = Project
+Command:
+oc new-project dev-project
+Check projects:
+oc get projects
+Switch project:
+oc project dev-project
+This ensures isolation between teams.
+________________________________________
+3. Authentication
+Authentication answers:
+Who are you?
+OpenShift supports many authentication methods.
+Examples:
+•	Local users
+•	LDAP
+•	GitHub
+•	OAuth
+•	HTPasswd
+Example: Login
+oc login -u developer -p password https://api.cluster.com
+OpenShift checks identity through OAuth server.
+________________________________________
+4. Authorization (RBAC)
+Authorization answers:
+What are you allowed to do?
+OpenShift uses RBAC (Role Based Access Control).
+RBAC Components:
+Component	Meaning
+Role	Set of permissions
+RoleBinding	Assign role to user
+ClusterRole	Cluster-wide role
+ClusterRoleBinding	Assign cluster role
+Example roles:
+•	admin
+•	edit
+•	view
+________________________________________
+Give User Access
+Give developer edit permission to project.
+oc adm policy add-role-to-user edit dhruv -n dev-project
+Check roles:
+oc get rolebindings
+________________________________________
+5. Resource Quotas
+If many teams use a cluster, one team might consume all resources.
+Resource quotas prevent this.
+Example limit:
+•	CPU
+•	Memory
+•	Pods
+•	Storage
+________________________________________
+Example ResourceQuota YAML
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: project-quota
+spec:
+  hard:
+    pods: "10"
+    requests.cpu: "4"
+    requests.memory: 8Gi
+Apply:
+oc apply -f quota.yaml
+Check quota:
+oc describe quota
+________________________________________
+6. Network Policies
+By default pods can communicate with any pod.
+This is not secure.
+Network policies restrict communication.
+Example:
+Allow only frontend to talk to backend.
+________________________________________
+NetworkPolicy Example
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-frontend
+spec:
+  podSelector:
+    matchLabels:
+      app: backend
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: frontend
+Apply:
+oc apply -f networkpolicy.yaml
+Now only frontend pods can access backend pods.
+________________________________________
+7. TLS Security (HTTPS)
+TLS encrypts network traffic.
+Example:
+Without TLS:
+User → HTTP → Application
+Anyone can intercept.
+With TLS:
+User → HTTPS (encrypted) → Application
+________________________________________
+OpenShift Routes
+Routes expose applications externally.
+Example:
+oc expose service myapp
+This creates:
+http://myapp-project.apps.cluster.com
+Enable TLS:
+oc create route edge myroute --service=myservice
+Types of TLS routes:
+Type	Meaning
+edge	TLS terminated at router
+passthrough	TLS passed to pod
+re-encrypt	Router decrypts and re-encrypts
+________________________________________
+8. Exposing Applications Using Other Protocols
+OpenShift routes mainly support HTTP/HTTPS.
+But some apps use:
+•	TCP
+•	UDP
+•	Databases
+•	Messaging systems
+For these we use:
+LoadBalancer
+Example:
+apiVersion: v1
+kind: Service
+metadata:
+  name: db-service
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 3306
+  selector:
+    app: mysql
+________________________________________
+9. Multi-Homed Networking
+Multi-homed network means:
+A pod can have multiple network interfaces
+Example:
+Pod connected to:
+•	Cluster network
+•	External storage network
+•	Monitoring network
+OpenShift uses Multus CNI.
+Check network attachment:
+oc get network-attachment-definitions
+________________________________________
+10. Operators
+Operators automate application management.
+Operator = automated administrator for an application.
+They manage:
+•	Install
+•	Update
+•	Backup
+•	Scaling
+•	Monitoring
+________________________________________
+Example Operators:
+Operator	Purpose
+Prometheus Operator	Monitoring
+Elasticsearch Operator	Logging
+MySQL Operator	Database
+________________________________________
+Install Operator
+Using CLI:
+oc apply -f operator.yaml
+Or through OperatorHub in OpenShift console.
+Check operators:
+oc get csv
+CSV = ClusterServiceVersion
+________________________________________
+11. Cluster Updates
+OpenShift supports automated cluster updates.
+Admin can update:
+•	Kubernetes version
+•	OpenShift version
+•	Operators
+________________________________________
+Check cluster version
+oc get clusterversion
+Example output:
+VERSION   AVAILABLE   PROGRESSING
+4.18.2    True        False
+Update cluster:
+oc adm upgrade
+________________________________________
+12. Reliability and Security
+Cluster administrators must ensure:
+Reliability
+•	Pods restart automatically
+•	High availability
+•	Monitoring
+•	Load balancing
+Security
+•	RBAC
+•	Network policies
+•	TLS encryption
+•	Resource limits
+________________________________________
+13. Daily Tasks of OpenShift Admin
+Typical daily tasks:
+Check cluster health
+oc get nodes
+Check pods
+oc get pods -A
+Check events
+oc get events
+Check logs
+oc logs pod-name
+Describe resources
+oc describe pod pod-name
+________________________________________
+Final Simple Summary
+DO280 teaches how to:
+1️⃣ Manage OpenShift clusters in production
+2️⃣ Implement multi-tenancy
+3️⃣ Configure authentication & RBAC
+4️⃣ Apply resource quotas
+5️⃣ Secure traffic with TLS
+6️⃣ Control communication using network policies
+7️⃣ Manage operators
+8️⃣ Perform cluster upgrades
+
