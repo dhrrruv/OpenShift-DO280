@@ -1,0 +1,382 @@
+Lab: Configure Network Security
+
+1. Architecture of the Lab
+Two microservices exist:
+External User
+      │
+      ▼
+OpenShift Router
+      │
+      ▼
+product service (product pod)
+      │
+ HTTPS
+      ▼
+stock service (stock pod)
+Microservices
+Service	Purpose
+product	API entry point
+stock	returns stock information
+Example response:
+{
+"id":1,
+"name":"rpi4_4gb",
+"stock":10
+}
+If product cannot contact stock:
+stock = -1
+________________________________________
+2. Lab Objectives
+You must configure:
+Security Feature	Purpose
+TLS service certificate	encrypt internal traffic
+OpenShift CA injection	trust TLS certificates
+External TLS route	expose API securely
+Network Policies	restrict pod communication
+________________________________________
+3. Start the Lab
+lab start network-review
+What this does
+Creates:
+project: network-review
+Deploys:
+product microservice
+stock microservice
+But without security.
+You must add security.
+________________________________________
+4. Login to OpenShift
+oc login -u admin -p redhatocp https://api.ocp4.example.com:6443
+Login as cluster administrator.
+________________________________________
+5. Switch to Project
+oc project network-review
+Now all resources are created inside:
+network-review namespace
+________________________________________
+6. Configure TLS for Stock Service (Internal Encryption)
+First we secure stock microservice.
+________________________________________
+Add Service Annotation
+Edit:
+stock-service.yaml
+Add:
+annotations:
+  service.beta.openshift.io/serving-cert-secret-name: stock-service-cert
+Full example:
+apiVersion: v1
+kind: Service
+metadata:
+  name: stock
+  namespace: network-review
+  annotations:
+    service.beta.openshift.io/serving-cert-secret-name: stock-service-cert
+________________________________________
+What This Annotation Does
+It tells OpenShift:
+Generate TLS certificate for this service
+OpenShift Service CA controller will:
+1.	generate certificate
+2.	sign with cluster CA
+3.	create secret
+stock-service-cert
+________________________________________
+Apply the Service
+oc apply -f stock-service.yaml
+________________________________________
+7. Verify Certificate
+Command:
+oc get secret stock-service-cert \
+--output="jsonpath={.data.tls\.crt}" \
+| base64 -d | openssl x509 -text
+________________________________________
+Command Breakdown
+Get certificate
+oc get secret stock-service-cert
+Retrieve TLS secret.
+________________________________________
+Extract TLS cert
+jsonpath={.data.tls\.crt}
+Extract:
+tls.crt
+________________________________________
+Decode base64
+Secrets are stored encoded.
+base64 -d
+Decodes certificate.
+________________________________________
+Inspect certificate
+openssl x509 -text
+Shows certificate details.
+________________________________________
+Important Output
+DNS:stock.network-review.svc
+DNS:stock.network-review.svc.cluster.local
+These are internal DNS names.
+________________________________________
+8. Configure TLS in Stock Deployment
+Now the application must use the certificate.
+Edit:
+stock-deployment.yaml
+________________________________________
+Mount the Secret
+volumeMounts:
+- name: stock-service-cert
+  mountPath: /etc/pki/stock/
+Volumes:
+volumes:
+- name: stock-service-cert
+  secret:
+    secretName: stock-service-cert
+________________________________________
+Result
+Inside container:
+/etc/pki/stock/tls.crt
+/etc/pki/stock/tls.key
+Application uses them.
+________________________________________
+9. Enable TLS in Application
+Environment variable:
+env:
+- name: TLS_ENABLED
+  value: "true"
+This tells the application:
+start HTTPS server
+________________________________________
+10. Update Health Probes
+Health probes must use HTTPS.
+readinessProbe:
+  httpGet:
+    port: 8085
+    path: /readyz
+    scheme: HTTPS
+livenessProbe:
+  httpGet:
+    port: 8085
+    path: /livez
+    scheme: HTTPS
+________________________________________
+11. Apply Deployment
+oc apply -f stock-deployment.yaml
+Deployment restarts.
+Pods now run HTTPS server.
+________________________________________
+12. Update Stock Service Port
+Edit:
+stock-service.yaml
+Change port:
+ports:
+- port: 443
+  targetPort: 8085
+  name: https
+Explanation:
+Field	Meaning
+port 443	service HTTPS port
+targetPort 8085	container port
+________________________________________
+Apply:
+oc apply -f stock-service.yaml
+________________________________________
+13. Configure Product to Trust Stock TLS
+Stock certificate is signed by OpenShift internal CA.
+Product must trust it.
+________________________________________
+Create CA ConfigMap
+Edit:
+service-ca-configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: service-ca
+  namespace: network-review
+  annotations:
+    service.beta.openshift.io/inject-cabundle: "true"
+________________________________________
+What This Does
+OpenShift injects cluster CA certificate.
+Creates:
+service-ca.crt
+________________________________________
+Apply:
+oc create -f service-ca-configmap.yaml
+________________________________________
+14. Verify CA Injection
+oc describe configmap service-ca
+Look for:
+service-ca.crt
+________________________________________
+15. Configure Product Deployment
+Edit:
+product-deployment.yaml
+Add environment variables:
+env:
+- name: CERT_CA
+  value: "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem"
+This tells application where CA certificate is.
+________________________________________
+Update Stock URL
+- name: STOCK_URL
+  value: "https://stock.network-review.svc"
+Now product uses HTTPS.
+________________________________________
+16. Mount CA Bundle
+volumeMounts:
+- name: trusted-ca
+  mountPath: /etc/pki/ca-trust/extracted/pem
+Volume:
+volumes:
+- name: trusted-ca
+  configMap:
+    name: service-ca
+________________________________________
+Apply deployment:
+oc apply -f product-deployment.yaml
+________________________________________
+17. Test Internal TLS
+Run:
+oc exec deployment/product \
+-- curl -s https://stock.network-review.svc/product/1
+Output:
+10
+Meaning:
+product -> stock communication works via HTTPS
+________________________________________
+18. Configure External TLS for Product
+External users must access:
+https://product.apps.ocp4.example.com
+But we use corporate CA certificate.
+________________________________________
+Create TLS Secret
+oc create secret tls passthrough-cert \
+--cert certs/product.pem \
+--key certs/product.key
+Explanation:
+Option	Meaning
+secret tls	create TLS secret
+--cert	certificate file
+--key	private key
+________________________________________
+19. Mount Certificate in Product Pod
+volumeMounts:
+- name: passthrough-cert
+  mountPath: /etc/pki/product/
+Volume:
+volumes:
+- name: passthrough-cert
+  secret:
+    secretName: passthrough-cert
+________________________________________
+20. Enable TLS in Product
+env:
+- name: TLS_ENABLED
+  value: "true"
+________________________________________
+Update probes:
+scheme: HTTPS
+________________________________________
+Apply:
+oc apply -f product-deployment.yaml
+________________________________________
+21. Create Passthrough Route
+Command:
+oc create route passthrough product-https \
+--service product \
+--port 8080 \
+--hostname product.apps.ocp4.example.com
+________________________________________
+Route Explanation
+Field	Meaning
+passthrough	TLS goes directly to pod
+service product	backend service
+port 8080	container port
+hostname	external DNS
+Flow:
+Client -> Router -> Pod
+Router does NOT terminate TLS.
+________________________________________
+22. Test External Access
+curl --cacert certs/ca.pem \
+https://product.apps.ocp4.example.com/products
+Output:
+[{"id":1,"name":"rpi4_4gb","stock":10}]
+________________________________________
+23. Configure Network Policy for Stock
+We allow only product pods to access stock.
+Edit:
+stock-ingresspolicy.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ingress-stock-policy
+spec:
+  podSelector:
+    matchLabels:
+      app: stock
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: product
+    ports:
+    - protocol: TCP
+      port: 8085
+________________________________________
+Apply:
+oc create -f stock-ingresspolicy.yaml
+________________________________________
+24. Configure Network Policy for Product
+Only router pods can access product.
+Edit:
+product-ingresspolicy.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: product-ingress-policy
+spec:
+  podSelector:
+    matchLabels:
+      app: product
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          policy-group.network.openshift.io/ingress: ""
+    ports:
+    - protocol: TCP
+      port: 8080
+________________________________________
+Apply:
+oc create -f product-ingresspolicy.yaml
+________________________________________
+25. Final Secure Architecture
+External User
+     │
+     ▼
+Router (TLS passthrough)
+     │
+     ▼
+Product Pod (HTTPS)
+     │
+     ▼
+Stock Pod (HTTPS)
+
+Network Policies:
+Router -> Product only
+Product -> Stock only
+________________________________________
+26. Security Features Implemented
+Feature	Purpose
+Service Serving Cert	internal TLS
+CA Injection	certificate trust
+TLS Secret	external TLS
+Route Passthrough	secure external access
+NetworkPolicy	restrict traffic
+________________________________________
+27. Key EX280 Concepts from This Lab
+You must understand:
+service.beta.openshift.io/serving-cert-secret-name
+service.beta.openshift.io/inject-cabundle
+oc create secret tls
+oc create route passthrough
+NetworkPolicy
+
