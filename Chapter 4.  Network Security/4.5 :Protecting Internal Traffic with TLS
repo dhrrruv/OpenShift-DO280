@@ -1,0 +1,350 @@
+Protecting Internal Traffic with TLS
+Objectives
+Configure and use automatic service certificates.
+
+1. What is TLS?
+TLS = Transport Layer Security
+Purpose:
+Encrypt communication
+Verify server identity
+Protect data integrity
+Without TLS:
+Client → Server
+DATA = Plain text
+Anyone can read it.
+With TLS:
+Client → Server
+DATA = Encrypted
+Attackers cannot read or modify traffic.
+________________________________________
+2. Zero-Trust Security Model
+A Zero-Trust environment assumes:
+Nothing is trusted automatically
+Every connection must verify:
+Identity
+Authorization
+Encryption
+Principles:
+1️⃣ Always verify identity
+2️⃣ Encrypt communication
+3️⃣ Allow only explicit access
+Example:
+Frontend → Backend
+Frontend must verify:
+Backend certificate
+________________________________________
+3. Default OpenShift Network Security
+OpenShift already encrypts cluster management traffic.
+Example:
+Node ↔ Control Plane
+Traffic encrypted automatically.
+This is stronger than default Kubernetes.
+________________________________________
+But application traffic is NOT encrypted by default.
+Example:
+Pod A → Pod B
+Traffic is:
+HTTP (unencrypted)
+For zero-trust environments we must add:
+TLS encryption
+________________________________________
+4. Two Types of TLS in OpenShift
+OpenShift secures traffic in two main areas.
+1️⃣ External Traffic
+From outside the cluster.
+Example:
+Internet → OpenShift Application
+Secured using:
+Routes + TLS
+________________________________________
+2️⃣ Internal Traffic
+Between applications inside cluster.
+Example:
+Pod A → Pod B
+Secured using:
+Service Certificates
+________________________________________
+5. Securing External Traffic with Routes
+Routes expose applications.
+Example route:
+www.example.com
+External client accesses:
+https://www.example.com
+Routes support three TLS types.
+________________________________________
+6. TLS Termination Types
+1️⃣ Edge Termination
+TLS ends at router.
+Client (HTTPS)
+     │
+     ▼
+Router (decrypt)
+     │
+     ▼
+Pod (HTTP)
+Traffic inside cluster:
+NOT encrypted
+Pros:
+Simple
+Cons:
+Not secure internally
+________________________________________
+2️⃣ Passthrough Termination
+Router does not decrypt TLS.
+Client (HTTPS)
+     │
+     ▼
+Router
+     │
+     ▼
+Pod (HTTPS)
+Pod handles TLS.
+Pros:
+End-to-end encryption
+Cons:
+Router cannot inspect traffic
+________________________________________
+3️⃣ Re-encrypt Termination
+Most secure route type.
+Client (HTTPS)
+     │
+     ▼
+Router (decrypt)
+     │
+     ▼
+Router (re-encrypt)
+     │
+     ▼
+Pod (HTTPS)
+Traffic always encrypted.
+Requires certificate on pod.
+________________________________________
+7. Creating Secure Routes
+Example command:
+oc create route edge myroute \
+--service=myservice \
+--hostname=app.example.com
+For passthrough:
+oc create route passthrough myroute \
+--service=myservice
+________________________________________
+8. Securing Internal Traffic
+OpenShift uses a component called:
+service-ca controller
+Purpose:
+Automatically generate TLS certificates
+for services.
+________________________________________
+9. How Service Certificates Work
+Step-by-step process:
+1 Create service
+2 Add annotation
+3 OpenShift generates certificate
+4 Certificate stored in secret
+5 Pod mounts secret
+6 Application uses TLS
+________________________________________
+10. Generating Service Certificates
+Add annotation to service.
+Command:
+oc annotate service hello \
+service.beta.openshift.io/serving-cert-secret-name=hello-secret
+Explanation:
+Part	Meaning
+service hello	service name
+serving-cert-secret-name	secret name
+hello-secret	generated TLS secret
+________________________________________
+11. What Happens After Annotation
+OpenShift automatically creates:
+Secret: hello-secret
+Contents:
+tls.crt
+tls.key
+These files contain:
+Certificate
+Private key
+Check secret:
+oc get secret hello-secret
+________________________________________
+12. Using the Certificate in a Pod
+Application must mount the secret.
+Example Deployment YAML patch
+spec:
+  template:
+    spec:
+      containers:
+      - name: hello
+        volumeMounts:
+        - name: hello-volume
+          mountPath: /etc/pki/nginx/
+Meaning:
+Mount TLS files into container
+________________________________________
+Volume Definition
+volumes:
+- name: hello-volume
+  secret:
+    secretName: hello-secret
+Meaning:
+Mount secret as volume
+________________________________________
+TLS File Mapping
+items:
+- key: tls.crt
+  path: server.crt
+Meaning:
+Certificate location
+________________________________________
+- key: tls.key
+  path: private/server.key
+Meaning:
+Private key location
+Application now serves HTTPS.
+________________________________________
+13. Client Application Verification
+Clients must verify certificates.
+For that they need:
+CA certificate
+CA = Certificate Authority
+________________________________________
+14. Injecting the CA Bundle
+OpenShift can inject the CA automatically.
+Create configmap:
+oc create configmap ca-bundle
+________________________________________
+Add annotation:
+oc annotate configmap ca-bundle \
+service.beta.openshift.io/inject-cabundle=true
+Now OpenShift inserts CA certificate into:
+data.service-ca.crt
+Check configmap:
+oc get configmap ca-bundle -o yaml
+________________________________________
+15. Mount CA Bundle in Client Pod
+Mount configmap as volume.
+Example:
+Client Pod
+   │
+   ▼
+Reads CA certificate
+   │
+   ▼
+Validates server certificate
+Ensures:
+Server is trusted
+________________________________________
+16. Important Warning
+The service-ca controller replaces all data in the configmap.
+Therefore:
+Use a dedicated configmap
+Do not mix with other configuration.
+________________________________________
+17. Certificate Rotation
+Certificates expire.
+OpenShift automatically rotates them.
+Service CA validity:
+26 months
+Rotation happens when:
+Remaining validity < 13 months
+________________________________________
+18. Grace Period
+During rotation:
+Old certificate still valid
+for:
+13 months
+However:
+Pods must restart
+to load the new certificate.
+________________________________________
+19. Manual Certificate Rotation
+You can rotate service certificate manually.
+Delete secret:
+oc delete secret hello-secret
+Result:
+service-ca controller regenerates it
+________________________________________
+20. Rotating the CA Certificate
+Command:
+oc delete secret/signing-key \
+-n openshift-service-ca
+Effect:
+New CA certificate created
+⚠ Warning:
+All pods must restart
+Otherwise TLS fails.
+________________________________________
+21. Alternatives for TLS
+OpenShift also supports advanced tools.
+________________________________________
+1️⃣ Service Mesh
+Technology:
+Istio-based
+Provides:
+mTLS (mutual TLS)
+Traffic management
+Observability
+________________________________________
+2️⃣ cert-manager
+Operator that:
+automates certificates
+Example:
+Let's Encrypt integration
+Handles:
+certificate creation
+renewal
+expiration
+________________________________________
+22. Security Architecture Example
+Example secure architecture:
+Internet
+   │
+HTTPS
+   ▼
+Router
+   │
+Re-encrypted TLS
+   ▼
+Frontend Pod
+   │
+TLS
+   ▼
+Backend Pod
+   │
+TLS
+   ▼
+Database
+All communication encrypted.
+________________________________________
+23. Key Commands (EX280 Important)
+Generate service certificate:
+oc annotate service myservice \
+service.beta.openshift.io/serving-cert-secret-name=mysecret
+________________________________________
+Check secret:
+oc get secret
+________________________________________
+Create configmap:
+oc create configmap ca-bundle
+________________________________________
+Inject CA bundle:
+oc annotate configmap ca-bundle \
+service.beta.openshift.io/inject-cabundle=true
+________________________________________
+Rotate certificate:
+oc delete secret mysecret
+________________________________________
+24. Key Exam Points
+Remember these for EX280:
+1️⃣ OpenShift encrypts control plane traffic automatically
+2️⃣ Application traffic not encrypted by default
+3️⃣ Service certificates generated by:
+service-ca controller
+4️⃣ Annotation for certificate:
+service.beta.openshift.io/serving-cert-secret-name
+5️⃣ TLS secret contains:
+tls.crt
+tls.key
+6️⃣ CA bundle injected using:
+service.beta.openshift.io/inject-cabundle=true
+
