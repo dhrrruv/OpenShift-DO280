@@ -1,0 +1,330 @@
+1. Goal of This Lab
+In this lab you learn how to:
+1.	Deploy an application using a Helm chart
+2.	Use a private container registry
+3.	Upgrade an application to a new chart version
+4.	Deploy test and production environments
+5.	Configure resource limits and requests
+Application used: Etherpad
+________________________________________
+2. Start the Lab Environment
+Command:
+lab start packaged-review
+What this does
+•	Prepares the environment
+•	Starts the lab cluster
+•	Makes the OpenShift API reachable
+•	Resets previous resources
+________________________________________
+3. Login to the OpenShift Cluster
+Command:
+oc login -u developer -p developer https://api.ocp4.example.com:6443
+Explanation:
+Part	Meaning
+oc login	login to cluster
+-u developer	username
+-p developer	password
+URL	cluster API server
+________________________________________
+4. Create Two Projects (Namespaces)
+Create development/test project
+oc new-project packaged-review
+Meaning:
+Creates namespace:
+packaged-review
+Used for testing deployment.
+________________________________________
+Create production project
+oc new-project packaged-review-prod
+Namespace:
+packaged-review-prod
+Used for production deployment.
+________________________________________
+5. Add Helm Repository
+First check existing repos:
+helm repo list
+Example output:
+NAME        URL
+do280-repo  http://helm.ocp4.example.com/charts
+If missing, add it:
+helm repo add do280-repo http://helm.ocp4.example.com/charts
+Explanation:
+Part	Meaning
+helm repo add	add chart repository
+do280-repo	repo name
+URL	location of charts
+Repository stores Helm charts.
+________________________________________
+6. Search Available Charts
+Command:
+helm search repo --versions
+Output example:
+do280-repo/etherpad 0.0.7
+do280-repo/etherpad 0.0.6
+Meaning:
+Two chart versions exist:
+0.0.6
+0.0.7
+________________________________________
+7. Examine Chart Configuration
+Command:
+helm show values do280-repo/etherpad --version 0.0.6
+This shows default chart values.
+Example:
+replicaCount: 1
+Meaning:
+Default deployment runs 1 pod.
+________________________________________
+Example image configuration:
+image:
+  repository: etherpad
+  name:
+  tag:
+Default image:
+docker.io/etherpad/etherpad:latest
+But the classroom environment is offline, so Docker Hub cannot be used.
+________________________________________
+8. Use Private Container Registry
+Instead of Docker Hub, use:
+registry.ocp4.example.com:8443
+Image:
+registry.ocp4.example.com:8443/etherpad/etherpad:1.8.17
+________________________________________
+9. Create values-test.yaml
+Create file:
+values-test.yaml
+Content:
+image:
+  repository: registry.ocp4.example.com:8443/etherpad
+  name: etherpad
+  tag: 1.8.17
+Purpose:
+Overrides default image values.
+________________________________________
+10. Switch to Test Project
+Command:
+oc project packaged-review
+Meaning:
+Set active namespace to:
+packaged-review
+________________________________________
+11. Install the Helm Chart
+Command:
+helm install test do280-repo/etherpad \
+-f values-test.yaml --version 0.0.6
+Explanation:
+Part	Meaning
+helm install	install chart
+test	release name
+do280-repo/etherpad	chart
+-f values-test.yaml	custom values
+--version 0.0.6	chart version
+Helm will create:
+•	Deployment
+•	Service
+•	Route
+•	Pod
+________________________________________
+12. Verify Helm Installation
+Command:
+helm list
+Example output:
+NAME  NAMESPACE        CHART
+test  packaged-review  etherpad-0.0.6
+Meaning:
+Release name:
+test
+Chart version:
+0.0.6
+________________________________________
+13. Check Pod and Deployment
+Command:
+watch oc get deployments,pods
+Output example:
+deployment.apps/test-etherpad   1/1
+pod/test-etherpad-xxxx          Running
+Meaning:
+•	Deployment ready
+•	Pod running
+Press:
+CTRL+C
+to stop watch.
+________________________________________
+14. Verify Container Image
+Command:
+oc describe pods -n packaged-review | egrep '^Name:|Image:'
+Output:
+Image: registry.ocp4.example.com:8443/etherpad/etherpad:1.8.17
+Meaning:
+Correct private registry image is used.
+________________________________________
+15. Get Application URL
+Command:
+oc get routes
+Example output:
+test-etherpad-packaged-review.apps.ocp4.example.com
+Application URL:
+https://test-etherpad-packaged-review.apps.ocp4.example.com
+Open in browser.
+________________________________________
+16. Upgrade Application Version
+Update values file:
+values-test.yaml
+Change image tag:
+image:
+  repository: registry.ocp4.example.com:8443/etherpad
+  name: etherpad
+  tag: 1.8.18
+________________________________________
+17. Verify New Chart Version Exists
+Command:
+helm search repo --versions etherpad
+Output:
+0.0.7
+0.0.6
+________________________________________
+18. Upgrade Helm Release
+Command:
+helm upgrade test do280-repo/etherpad \
+-f values-test.yaml --version 0.0.7
+Explanation:
+Part	Meaning
+helm upgrade	update release
+test	release name
+chart	etherpad
+version	0.0.7
+Output shows:
+REVISION: 2
+Meaning deployment updated.
+________________________________________
+19. Verify Upgrade
+Command:
+helm list
+Output:
+etherpad-0.0.7
+________________________________________
+Check pod image again:
+oc describe pods -n packaged-review | egrep '^Name:|Image:'
+Output:
+1.8.18
+New image running.
+________________________________________
+20. Deploy Production Version
+Switch namespace:
+oc project packaged-review-prod
+________________________________________
+Copy values file:
+cp values-test.yaml values-prod.yaml
+________________________________________
+21. Configure Production Route
+Edit:
+values-prod.yaml
+Add route host:
+image:
+  repository: registry.ocp4.example.com:8443/etherpad
+  name: etherpad
+  tag: 1.8.18
+
+route:
+  host: etherpad.apps.ocp4.example.com
+________________________________________
+22. Install Production Deployment
+Command:
+helm install prod do280-repo/etherpad \
+-f values-prod.yaml --version 0.0.6
+Release name:
+prod
+Namespace:
+packaged-review-prod
+________________________________________
+Check:
+helm list
+Output:
+prod packaged-review-prod etherpad-0.0.6
+________________________________________
+23. Verify Production Pod
+Command:
+watch oc get deployments,pods
+Pod should be:
+Running
+________________________________________
+24. Add Resource Limits
+Edit:
+values-prod.yaml
+Add resources:
+resources:
+  limits:
+    memory: 256Mi
+  requests:
+    memory: 128Mi
+Meaning:
+Field	Meaning
+requests	minimum memory
+limits	maximum memory
+________________________________________
+25. Upgrade Production Deployment
+Command:
+helm upgrade prod do280-repo/etherpad \
+-f values-prod.yaml --version 0.0.7
+Now production uses:
+chart version 0.0.7
+________________________________________
+26. Verify Resource Limits
+Command:
+oc describe pods -n packaged-review-prod | egrep -A1 '^Name:|Limits|Requests'
+Output:
+Limits:
+ memory: 256Mi
+Requests:
+ memory: 128Mi
+Meaning memory limits applied successfully.
+________________________________________
+27. Compare with Test Deployment
+Run:
+oc describe pods -n packaged-review
+Test deployment has:
+no limits
+Because values-test.yaml did not define resources.
+________________________________________
+28. Clean Up Files
+Command:
+rm values-test.yaml values-prod.yaml
+Removes configuration files.
+________________________________________
+29. Grade Lab
+Command:
+lab grade packaged-review
+This checks if:
+•	deployments correct
+•	routes correct
+•	limits correct
+•	chart versions correct
+________________________________________
+30. Finish Lab
+Command:
+lab finish packaged-review
+Purpose:
+•	clean cluster
+•	remove resources
+•	prepare for next lab
+________________________________________
+Important Concepts From This Lab
+Concept	Meaning
+Helm Chart	packaged Kubernetes app
+Helm Repo	storage for charts
+Release	installed chart
+values.yaml	custom configuration
+helm install	deploy chart
+helm upgrade	update chart
+resources.requests	minimum resource
+resources.limits	maximum resource
+________________________________________
+Real Production Use
+Helm is used for deploying:
+•	Prometheus
+•	Grafana
+•	Jenkins
+•	GitLab
+•	Istio
+•	Monitoring stacks
+
