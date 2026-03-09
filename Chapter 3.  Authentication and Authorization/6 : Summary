@@ -1,0 +1,278 @@
+1. Default Authentication After OpenShift Installation
+When an OpenShift cluster is installed, it automatically creates two administrative access methods.
+1️⃣ kubeconfig File
+The kubeconfig file stores cluster access credentials.
+Example location:
+~/.kube/config
+Or admin kubeconfig:
+/home/core/auth/kubeconfig
+This file contains:
+•	API server address
+•	authentication token
+•	certificates
+Example structure:
+clusters:
+users:
+contexts:
+Example command
+Login using kubeconfig:
+oc login --kubeconfig=kubeconfig
+or
+export KUBECONFIG=/path/kubeconfig
+Then use:
+oc get nodes
+________________________________________
+2️⃣ kubeadmin Virtual User
+OpenShift also creates a temporary user:
+kubeadmin
+Password stored in:
+kubeadmin-password
+Example login:
+oc login -u kubeadmin -p <password> https://api.cluster:6443
+Important rule:
+kubeadmin should be removed after configuring identity providers
+because it is only meant for initial cluster setup.
+________________________________________
+2. HTPasswd Identity Provider
+HTPasswd is a simple authentication method.
+Users are stored in a file like this:
+username:hashed_password
+Example:
+developer:$apr1$abc123$asdfghjkl
+Passwords are hashed, not plain text.
+________________________________________
+Where OpenShift Stores HTPasswd Data
+OpenShift stores the htpasswd file inside a Kubernetes Secret.
+Example secret:
+auth-review
+Namespace:
+openshift-config
+Check secret:
+oc get secret -n openshift-config
+View secret:
+oc describe secret auth-review -n openshift-config
+________________________________________
+3. OAuth Custom Resource
+Authentication configuration is stored in the OAuth cluster resource.
+View it:
+oc get oauth cluster -o yaml
+Example configuration:
+spec:
+  identityProviders:
+  - name: htpasswd
+    type: HTPasswd
+    htpasswd:
+      fileData:
+        name: auth-review
+Explanation:
+Field	Meaning
+identityProviders	list of authentication providers
+name	provider name
+type	authentication type
+fileData	secret storing htpasswd file
+________________________________________
+4. Managing HTPasswd Users
+To change users you must:
+1️⃣ Extract secret
+2️⃣ Modify htpasswd file
+3️⃣ Recreate secret
+________________________________________
+Step 1: Extract HTPasswd File
+oc extract secret/auth-review \
+-n openshift-config --to=.
+This retrieves the htpasswd file from the secret.
+________________________________________
+Step 2: Modify Users
+Use htpasswd command.
+Add user:
+htpasswd -b htpasswd newuser password
+Update password:
+htpasswd -b htpasswd username newpassword
+Delete user:
+htpasswd -D htpasswd username
+________________________________________
+Step 3: Update Secret
+Recreate the secret:
+oc create secret generic auth-review \
+--from-file htpasswd=htpasswd \
+-n openshift-config --dry-run=client -o yaml | oc apply -f -
+Then OpenShift automatically updates authentication.
+________________________________________
+5. OpenShift Users and Identities
+OpenShift creates two internal objects when a user logs in.
+User Resource
+Represents the OpenShift user.
+Check users:
+oc get users
+Example:
+developer
+tester
+admin
+________________________________________
+Identity Resource
+Represents the authentication provider identity.
+Check identities:
+oc get identities
+Example:
+htpasswd:developer
+ldap:user1
+________________________________________
+6. Deleting OpenShift Users
+To fully remove a user you must remove:
+1️⃣ credentials from identity provider
+2️⃣ OpenShift user object
+3️⃣ identity object
+________________________________________
+Step 1 Remove credentials
+Example:
+htpasswd -D htpasswd developer
+________________________________________
+Step 2 Delete user resource
+oc delete user developer
+________________________________________
+Step 3 Delete identity
+oc delete identity htpasswd:developer
+________________________________________
+7. RBAC (Role-Based Access Control)
+OpenShift uses RBAC to control user permissions.
+RBAC answers:
+What is the user allowed to do?
+RBAC consists of:
+Roles
+RoleBindings
+ClusterRoles
+ClusterRoleBindings
+________________________________________
+8. What is a Role?
+A role is a set of permissions.
+Example rule:
+create pods
+delete services
+view deployments
+Example default roles:
+Role	Permission
+cluster-admin	full cluster control
+admin	project administration
+edit	modify resources
+view	read-only
+________________________________________
+9. Assigning Roles
+Users get permissions by role bindings.
+RoleBinding connects:
+role → user/group
+________________________________________
+Assign Role to User
+Example:
+oc policy add-role-to-user edit developer
+Meaning:
+developer can modify project resources
+________________________________________
+Assign Role to Group
+Example:
+oc policy add-role-to-group edit developers
+Meaning:
+all users in developers group get edit permissions
+________________________________________
+10. Cluster-Level Roles
+Cluster roles apply to the entire cluster.
+Example roles:
+cluster-admin
+cluster-reader
+self-provisioner
+________________________________________
+Grant Cluster Admin
+Command:
+oc adm policy add-cluster-role-to-user cluster-admin user1
+Meaning:
+user1 becomes cluster administrator
+They can now:
+create nodes
+manage authentication
+create projects
+manage operators
+________________________________________
+11. Project Creation Control
+By default:
+all authenticated users can create projects
+This happens because of role:
+self-provisioner
+Assigned to group:
+system:authenticated:oauth
+________________________________________
+Remove Project Creation
+Command:
+oc adm policy remove-cluster-role-from-group \
+self-provisioner system:authenticated:oauth
+Now:
+normal users cannot create projects
+________________________________________
+12. Grant Project Creation to Specific Group
+Example:
+oc adm groups new managers
+Add users:
+oc adm groups add-users managers leader
+Give project creation permission:
+oc adm policy add-cluster-role-to-group self-provisioner managers
+Now only managers group can create projects.
+________________________________________
+13. Final Authentication + Authorization Flow
+OpenShift authentication process:
+User login
+     │
+     ▼
+OAuth Server
+     │
+     ▼
+Identity Provider
+     │
+     ▼
+User + Identity objects created
+     │
+     ▼
+RBAC roles applied
+     │
+     ▼
+User allowed to access resources
+________________________________________
+14. Most Important Commands (EX280)
+View OAuth config
+oc get oauth cluster -o yaml
+________________________________________
+Create HTPasswd user
+htpasswd -b htpasswd username password
+________________________________________
+Delete HTPasswd user
+htpasswd -D htpasswd username
+________________________________________
+Assign role to user
+oc policy add-role-to-user role user
+________________________________________
+Assign cluster admin
+oc adm policy add-cluster-role-to-user cluster-admin user
+________________________________________
+Remove project self creation
+oc adm policy remove-cluster-role-from-group \
+self-provisioner system:authenticated:oauth
+________________________________________
+15. Real Enterprise Design
+In real companies:
+Authentication
+   ├ LDAP
+   ├ Active Directory
+   ├ GitHub OAuth
+   └ HTPasswd (testing)
+
+Authorization
+   ├ cluster-admin (platform team)
+   ├ admin (team leads)
+   ├ edit (developers)
+   └ view (QA / auditors)
+________________________________________
+✅ Now you fully understand:
+•	OpenShift authentication
+•	Identity providers
+•	HTPasswd management
+•	OAuth configuration
+•	RBAC roles
+•	User/group permission control
+
