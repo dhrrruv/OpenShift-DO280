@@ -1,0 +1,289 @@
+Summary
+
+1. OpenShift Routes (External Access to Applications)
+In Kubernetes, services are internal only by default.
+To allow external users (internet or corporate network) to access an application, OpenShift uses Routes.
+A Route exposes a service with a hostname.
+Example:
+https://www.example.com
+Architecture:
+User
+  │
+  ▼
+OpenShift Router
+  │
+  ▼
+Route
+  │
+  ▼
+Service
+  │
+  ▼
+Pod
+Command to create a route:
+oc create route edge myroute --service=myservice
+This exposes the service externally.
+________________________________________
+2. Route Hostname
+Each route is accessible via a hostname.
+Example:
+product.apps.ocp4.example.com
+Where:
+Part	Meaning
+product	application
+apps	router domain
+ocp4.example.com	cluster domain
+Example command:
+oc expose service product
+This automatically creates a route.
+Check routes:
+oc get routes
+________________________________________
+3. Types of Route Encryption
+OpenShift supports 3 TLS encryption methods.
+________________________________________
+1️⃣ Edge TLS
+TLS connection ends at the OpenShift router.
+Flow:
+Client
+   │ HTTPS
+   ▼
+Router
+   │ HTTP
+   ▼
+Pod
+Characteristics:
+Feature	Description
+TLS termination	Router
+Internal traffic	HTTP
+Security	Moderate
+Example:
+oc create route edge myroute \
+--service=myservice \
+--hostname=www.example.com
+________________________________________
+2️⃣ Passthrough TLS
+Router does not decrypt TLS.
+Flow:
+Client
+   │ HTTPS
+   ▼
+Router
+   │ HTTPS
+   ▼
+Pod
+Characteristics:
+Feature	Description
+TLS termination	Pod
+Router inspection	Not possible
+Security	High
+Example:
+oc create route passthrough myroute \
+--service=myservice
+________________________________________
+3️⃣ Re-encryption TLS
+TLS ends at router and then re-encrypted again.
+Flow:
+Client
+   │ HTTPS
+   ▼
+Router
+   │ HTTPS
+   ▼
+Pod
+But router decrypts and re-encrypts.
+Characteristics:
+Feature	Description
+TLS termination	Router
+Re-encrypted	Yes
+Security	Very High
+Example:
+oc create route reencrypt myroute \
+--service=myservice
+________________________________________
+4. Certificates for Routes
+Secure routes require TLS certificates.
+Certificates must include:
+File	Purpose
+certificate	public certificate
+private key	private key
+CA certificate	certificate authority
+Example command:
+oc create route edge myroute \
+--service=myservice \
+--cert=mycert.pem \
+--key=mykey.pem \
+--hostname=www.example.com
+Certificates must be signed by trusted CA.
+Examples of CA:
+•	Corporate CA
+•	Let's Encrypt
+•	DigiCert
+•	GlobalSign
+________________________________________
+5. Default Cluster Networking Behavior
+In OpenShift, all pods can talk to all other pods by default.
+Default network rule:
+Allow all traffic
+Example:
+Pod A  ---> Pod B  (Allowed)
+Pod B  ---> Pod C  (Allowed)
+This is not secure for production.
+________________________________________
+6. Network Policies (Pod Firewall)
+To restrict pod communication, OpenShift uses NetworkPolicy.
+NetworkPolicy works like a firewall for pods.
+Example:
+Allow only product → stock
+Block everything else
+________________________________________
+NetworkPolicy uses labels
+Instead of IP addresses.
+Example:
+podSelector:
+  matchLabels:
+    app: stock
+Allow traffic from:
+from:
+- podSelector:
+    matchLabels:
+      app: product
+Example NetworkPolicy:
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: stock-policy
+spec:
+  podSelector:
+    matchLabels:
+      app: stock
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: product
+Apply policy:
+oc apply -f policy.yaml
+________________________________________
+7. Logical Network Zones
+Network policies allow creating logical network zones.
+Example corporate architecture:
+Frontend Zone
+Backend Zone
+Database Zone
+Example:
+Frontend pods → Backend pods
+Backend pods → Database pods
+Database pods → No external access
+Network policies enforce these rules.
+________________________________________
+8. OpenShift Service CA Controller
+OpenShift has a built-in certificate authority.
+Component:
+service-ca controller
+Purpose:
+Automatically generate TLS certificates for services.
+________________________________________
+9. Automatic Service Certificate Creation
+To request a certificate for a service, add annotation:
+service.beta.openshift.io/serving-cert-secret-name=my-secret
+Example service:
+apiVersion: v1
+kind: Service
+metadata:
+  name: myservice
+  annotations:
+    service.beta.openshift.io/serving-cert-secret-name: my-secret
+OpenShift automatically creates:
+Secret: my-secret
+Contents:
+File	Purpose
+tls.crt	certificate
+tls.key	private key
+________________________________________
+10. Service Certificate Hostnames
+Generated certificate includes service DNS names:
+Example:
+service.namespace.svc
+service.namespace.svc.cluster.local
+Example:
+stock.network-review.svc
+This allows secure internal communication.
+________________________________________
+11. Injecting CA Certificates into ConfigMaps
+Clients must trust the service certificate.
+OpenShift allows injecting CA certificate into a ConfigMap.
+Add annotation:
+service.beta.openshift.io/inject-cabundle=true
+Example ConfigMap:
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: service-ca
+  annotations:
+    service.beta.openshift.io/inject-cabundle: "true"
+OpenShift adds:
+service-ca.crt
+________________________________________
+12. Client Applications Use CA Bundle
+Client pods mount the ConfigMap.
+Example:
+volumeMounts:
+- mountPath: /etc/pki/ca-trust/extracted/pem
+  name: trusted-ca
+Volume:
+volumes:
+- name: trusted-ca
+  configMap:
+    name: service-ca
+Now clients trust service certificates.
+________________________________________
+13. Service Certificate Rotation
+Certificates eventually expire.
+To rotate certificate manually:
+Delete the secret.
+Example:
+oc delete secret my-secret
+The service-ca controller automatically generates a new certificate.
+________________________________________
+14. Security Workflow Summary
+Internal TLS flow:
+Service Annotation
+        │
+        ▼
+Service CA Controller
+        │
+        ▼
+Secret Created
+        │
+        ▼
+Pod mounts secret
+        │
+        ▼
+Service runs HTTPS
+        │
+        ▼
+CA injected into ConfigMap
+        │
+        ▼
+Client trusts certificate
+________________________________________
+15. Important Commands from This Topic
+Command	Purpose
+oc create route	expose application
+oc expose service	auto-create route
+oc get routes	list routes
+oc apply -f	apply network policy
+oc delete secret	rotate TLS certificate
+oc describe configmap	verify CA injection
+________________________________________
+16. Important EX280 Exam Topics From This Section
+You should remember these keywords:
+•	Route encryption types
+•	NetworkPolicy
+•	Service CA controller
+•	Serving certificate annotation
+•	CA bundle injection
+•	TLS secrets
+•	Pod network isolation
+
