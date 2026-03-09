@@ -1,0 +1,359 @@
+Kustomize Overlays (OpenShift / Kubernetes)
+Objective
+Deploy and update applications using resource manifests customized for different environments without modifying the original YAML files.
+Example environments:
+•	Development
+•	Testing
+•	Staging
+•	Production
+Each environment might have different configurations like:
+•	number of replicas
+•	environment variables
+•	resource limits
+•	database settings
+•	labels
+•	namespaces
+Kustomize allows you to reuse the same base YAML and apply environment-specific changes.
+________________________________________
+Why Kustomize is Needed
+Without Kustomize:
+You would create multiple YAML files:
+deployment-dev.yaml
+deployment-test.yaml
+deployment-prod.yaml
+Problems:
+•	duplication
+•	hard to maintain
+•	error-prone
+•	difficult version control
+________________________________________
+With Kustomize:
+You keep one base configuration and apply overlays for customization.
+Base YAML
+   ↓
+Overlay patches
+   ↓
+Final manifests
+This approach follows GitOps and DevOps best practices.
+________________________________________
+What is Kustomize?
+Kustomize is a configuration management tool for Kubernetes.
+It allows you to:
+•	reuse base YAML files
+•	apply patches
+•	customize resources
+•	generate configmaps and secrets
+•	manage multiple environments
+Both CLI tools support Kustomize:
+•	kubectl
+•	oc
+________________________________________
+Kustomize Directory Structure
+Typical project structure:
+frontend-app
+│
+├── base
+│   ├── configmap.yaml
+│   ├── deployment.yaml
+│   ├── secret.yaml
+│   ├── service.yaml
+│   ├── route.yaml
+│   └── kustomization.yaml
+│
+└── overlay
+    ├── development
+    │   └── kustomization.yaml
+    ├── testing
+    │   └── kustomization.yaml
+    └── production
+        ├── kustomization.yaml
+        └── patch.yaml
+Two main concepts:
+1.	Base
+2.	Overlay
+________________________________________
+1️⃣ Base Directory
+The base directory contains common resources used by all environments.
+Example:
+base/
+ ├ deployment.yaml
+ ├ service.yaml
+ ├ configmap.yaml
+ ├ secret.yaml
+ └ kustomization.yaml
+________________________________________
+Base kustomization.yaml
+Example:
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+- configmap.yaml
+- deployment.yaml
+- secret.yaml
+- service.yaml
+- route.yaml
+Explanation
+Field	Meaning
+apiVersion	Kustomize API
+kind	resource type
+resources	YAML files to include
+This file combines all base resources.
+________________________________________
+2️⃣ Overlay Directory
+Overlays modify the base configuration for different environments.
+Example overlays:
+overlay/
+  development/
+  testing/
+  production/
+Each environment has its own kustomization.yaml.
+________________________________________
+Example: Development Overlay
+File:
+overlay/development/kustomization.yaml
+Example:
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: dev-env
+
+resources:
+- ../../base
+Explanation:
+Field	Meaning
+namespace	deploy resources to dev-env
+resources	use base directory
+Result:
+All base resources are deployed into dev-env namespace.
+________________________________________
+Kustomize Global Customization Fields
+Kustomize allows global configuration.
+Field	Purpose
+namespace	set namespace
+namePrefix	add prefix to resource names
+nameSuffix	add suffix
+labels	add labels to all resources
+commonAnnotations	add annotations
+Example:
+namePrefix: dev-
+labels:
+  env: development
+Result:
+deployment name: dev-frontend
+________________________________________
+Patches (Customizing Resources)
+Overlays modify resources using patches.
+Patch structure contains:
+patch
+target
+________________________________________
+Example Patch
+patches:
+- patch: |-
+    - op: replace
+      path: /spec/replicas
+      value: 15
+  target:
+    kind: Deployment
+    name: frontend
+Explanation:
+Field	Meaning
+op	operation
+path	YAML path to change
+value	new value
+This changes:
+replicas: 1
+to
+replicas: 15
+________________________________________
+Example: Rename Deployment
+Patch example:
+- patch: |-
+    - op: replace
+      path: /metadata/name
+      value: frontend-test
+Result:
+deployment/frontend → deployment/frontend-test
+________________________________________
+Patch from External File
+Instead of inline patches, you can use a patch file.
+Example:
+overlay/production/
+  patch.yaml
+________________________________________
+kustomization.yaml
+patches:
+- path: patch.yaml
+  target:
+    kind: Deployment
+    name: frontend
+  options:
+    allowNameChange: true
+________________________________________
+patch.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-prod
+spec:
+  replicas: 5
+Result:
+frontend → frontend-prod
+replicas = 5
+________________________________________
+View Kustomize Output
+To preview generated manifests:
+Command:
+oc kustomize overlay/production
+This command renders final YAML without deploying.
+Example output:
+kind: Deployment
+name: frontend-prod
+replicas: 5
+labels:
+ env: prod
+________________________________________
+Deploy Kustomize Resources
+Command:
+oc apply -k overlay/production
+Explanation:
+Option	Meaning
+apply	create/update resources
+-k	apply kustomize directory
+Output:
+deployment.apps/frontend-prod created
+________________________________________
+Delete Kustomize Resources
+Command:
+oc delete -k overlay/production
+Deletes all resources created by that overlay.
+________________________________________
+Kustomize Generators
+Kustomize can automatically generate:
+1.	ConfigMaps
+2.	Secrets
+This avoids manually writing them.
+________________________________________
+ConfigMap Generator
+Example:
+configMapGenerator:
+- name: hello-app-configmap
+  literals:
+    - msg="Welcome!"
+    - enable="true"
+Resulting ConfigMap:
+hello-app-configmap-9tcmf95d77
+Notice:
+A hash is added to the name.
+________________________________________
+Why Hash Is Added
+Example:
+hello-app-configmap-9tcmf95d77
+If the content changes:
+hello-app-configmap-696dm8h728
+The name changes → triggers rolling update of pods.
+This ensures pods always use latest configuration.
+________________________________________
+Using ConfigMap in Deployment
+Example:
+env:
+- name: MY_MESSAGE
+  valueFrom:
+    configMapKeyRef:
+      name: hello-app-configmap
+      key: msg
+Pod environment variable is read from ConfigMap.
+________________________________________
+ConfigMap Generator Sources
+You can create ConfigMaps from:
+1️⃣ File
+files:
+- application.properties
+________________________________________
+2️⃣ Environment File
+envs:
+- configmap.env
+Example file:
+Greet=Welcome
+Enable=True
+________________________________________
+3️⃣ Literal Values
+literals:
+- key=value
+Example:
+name=configmap
+description=test
+________________________________________
+Secret Generator
+Similar to ConfigMap generator.
+Example:
+secretGenerator:
+- name: secret-3
+  literals:
+    - MYSQL_DB=mysql
+    - MYSQL_PASS=root
+Important:
+Secrets are automatically base64 encoded.
+________________________________________
+Generator Options
+Control generator behavior.
+Example:
+generatorOptions:
+  disableNameSuffixHash: true
+Meaning:
+Disable hash suffix.
+Normally:
+configmap-name-abc123
+After disabling:
+configmap-name
+________________________________________
+Add Labels and Annotations
+Example:
+generatorOptions:
+  labels:
+    type: generated
+  annotations:
+    note: generated-config
+________________________________________
+Kustomize Workflow Summary
+Base resources
+     ↓
+Overlay patches
+     ↓
+Kustomize builds final manifests
+     ↓
+oc apply -k overlay/env
+     ↓
+Resources deployed
+________________________________________
+Important Kustomize Commands
+Command	Purpose
+oc kustomize DIR	render manifests
+oc apply -k DIR	deploy kustomize resources
+oc delete -k DIR	delete resources
+tree	view project structure
+________________________________________
+Real Production Example
+Company deploying application worldwide:
+Environment	Replicas
+Dev	1
+Testing	3
+Production	20
+Using Kustomize:
+base → common deployment
+dev overlay → replicas 1
+test overlay → replicas 3
+prod overlay → replicas 20
+________________________________________
+Why Kustomize is Important in OpenShift
+Used in:
+•	GitOps pipelines
+•	CI/CD systems
+•	multi-environment deployments
+•	large Kubernetes clusters
+Tools that use Kustomize:
+•	ArgoCD
+•	OpenShift GitOps
+•	FluxCD
+
