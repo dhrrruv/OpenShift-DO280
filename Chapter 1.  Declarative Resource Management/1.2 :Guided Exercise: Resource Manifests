@@ -1,0 +1,285 @@
+Guided Exercise: Resource Manifests
+Goal
+Deploy and update an application using YAML files stored in a Git repository.
+This demonstrates a real production workflow:
+Git repository → YAML manifests → OpenShift cluster
+________________________________________
+What You Learn in This Exercise
+1.	Deploy application using YAML manifests from Git
+2.	Validate manifests before deployment
+3.	Compare changes between versions
+4.	Update applications using new manifests
+5.	Restart pods when configuration changes
+________________________________________
+Step 1: Start the Lab Environment
+Command:
+lab start declarative-manifests
+What this does
+This command prepares the environment:
+•	resets cluster resources
+•	prepares the Git repository
+•	creates required directories
+•	ensures the exercise environment is clean
+________________________________________
+Step 2: Login to OpenShift Cluster
+Command:
+oc login -u developer -p developer https://api.ocp4.example.com:6443
+Explanation
+Part	Meaning
+oc	OpenShift CLI
+login	Authenticate to cluster
+-u developer	username
+-p developer	password
+URL	API server address
+Output:
+Login successful
+Now the user can manage resources.
+________________________________________
+Step 3: Create a New Project
+Command:
+oc new-project declarative-manifests
+What this does
+Creates a namespace/project for this application.
+Projects isolate resources.
+Result:
+Now using project declarative-manifests
+All resources will be deployed inside this namespace.
+________________________________________
+Step 4: Clone the Git Repository
+Move to labs directory:
+cd ~/DO280/labs
+Clone repository:
+git clone https://git.ocp4.example.com/developer/declarative-manifests.git
+What this does
+Downloads application manifests stored in Git.
+Directory structure:
+declarative-manifests
+   database.yaml
+   exoplanets.yaml
+These YAML files define the application.
+________________________________________
+Step 5: Inspect Repository Contents
+Command:
+ls -lA
+Output:
+database.yaml
+exoplanets.yaml
+Meaning
+File	Purpose
+database.yaml	Database resources
+exoplanets.yaml	Application resources
+Resources defined inside may include:
+•	ConfigMap
+•	Secret
+•	Deployment
+•	Service
+•	Route
+________________________________________
+Step 6: Check Git Versions
+Command:
+git log --oneline
+Output shows versions:
+v1.0
+v1.1.0
+v1.1.1
+These represent application versions.
+Version	Description
+v1.0	first release
+v1.1.0	second release
+v1.1.1	third release
+This is a GitOps workflow where app versions are stored in Git.
+________________________________________
+Step 7: Deploy First Application Version
+Switch to version v1.0:
+git checkout v1.0
+This loads the first version manifests.
+________________________________________
+Step 8: Validate YAML Before Deployment
+Command:
+oc apply -f . --validate=true --dry-run=server -n declarative-manifests
+Explanation
+Option	Meaning
+-f .	apply all YAML files in current directory
+--validate=true	validate YAML syntax
+--dry-run=server	test without applying
+-n	namespace
+Output example:
+deployment.apps/database created (server dry run)
+Important: No resource is actually created.
+This prevents errors before deployment.
+________________________________________
+Step 9: Deploy the Application
+Command:
+oc apply -f . --namespace declarative-manifests
+This creates all resources.
+Example output:
+configmap/database created
+secret/database created
+deployment.apps/database created
+service/database created
+deployment.apps/exoplanets created
+route.route.openshift.io/exoplanets created
+________________________________________
+Resources Created
+The application includes:
+Resource	Purpose
+ConfigMap	configuration values
+Secret	sensitive data
+Deployment	manages pods
+Service	exposes pods internally
+Route	exposes application externally
+________________________________________
+Step 10: Monitor Pods
+Command:
+watch oc get deployments,pods --namespace declarative-manifests
+What this does
+Continuously shows pod status.
+Example output:
+deployment.apps/database
+deployment.apps/exoplanets
+
+pod/database-xxxx Running
+pod/exoplanets-xxxx Running
+Important concept:
+The exoplanets pod may temporarily crash if the database is not ready yet.
+________________________________________
+Step 11: Check Application Route
+Command:
+oc get routes -l app=exoplanets -n declarative-manifests
+Output:
+exoplanets.apps.ocp4.example.com
+This URL allows external access.
+Opening it in a browser shows application version v1.0.
+________________________________________
+Step 12: Deploy Second Version (v1.1.0)
+Switch version:
+git checkout v1.1.0
+Now YAML files contain updated manifests.
+________________________________________
+Step 13: Compare Manifest Changes
+Command:
+oc diff -f . --namespace declarative-manifests
+Output example:
+- image: exoplanets:v1.0
++ image: exoplanets:v1.1.0
+Meaning:
+The container image version changed.
+This will trigger a new deployment rollout.
+________________________________________
+Step 14: Apply the Update
+Command:
+oc apply -f . --namespace declarative-manifests
+Output:
+deployment.apps/exoplanets configured
+Now Kubernetes performs a rolling update.
+New pods replace old ones.
+________________________________________
+Step 15: Monitor Pods Again
+Command:
+watch oc get deployments,pods
+New pod example:
+exoplanets-74c85f5796 Running
+This confirms version v1.1.0 is running.
+________________________________________
+Step 16: Deploy Third Version (v1.1.1)
+Switch version:
+git checkout v1.1.1
+________________________________________
+Step 17: Compare Changes
+Command:
+oc diff -f .
+Output:
+Secret updated
+DB_USER changed
+This means the database credentials changed.
+________________________________________
+Step 18: Apply the Update
+Command:
+oc apply -f . --namespace declarative-manifests
+But notice:
+deployment.apps/exoplanets unchanged
+Meaning:
+Pods are not recreated automatically.
+________________________________________
+Step 19: Problem — CrashLoopBackOff
+Check pods:
+oc get pods
+Output:
+exoplanets CrashLoopBackOff
+Reason:
+Pods loaded old secret values.
+Pods only read secrets at startup.
+________________________________________
+Step 20: Restart Pods
+Solution:
+Restart deployments.
+Database restart:
+oc rollout restart deployment/database
+Application restart:
+oc rollout restart deployment/exoplanets
+This recreates pods with new configuration.
+________________________________________
+Step 21: Monitor Pods
+Command:
+watch oc get pods
+New pods appear:
+database Running
+exoplanets Running
+Application works again.
+________________________________________
+Step 22: View Last Applied Configuration
+Command:
+oc get deployment exoplanets -o yaml
+Inside output you will see:
+kubectl.kubernetes.io/last-applied-configuration
+Purpose
+Tracks the last YAML manifest applied.
+This helps oc apply compare:
+1.	current resource
+2.	last applied config
+3.	new manifest
+________________________________________
+Step 23: Clean Up Resources
+Delete application resources:
+oc delete -f . --namespace declarative-manifests
+Output:
+deployment deleted
+service deleted
+route deleted
+________________________________________
+Step 24: Finish Lab
+Command:
+lab finish declarative-manifests
+This resets the lab environment.
+________________________________________
+Complete Workflow Summary
+The workflow used in this exercise:
+Git Repository
+      ↓
+Clone YAML manifests
+      ↓
+Validate manifests
+      ↓
+oc apply
+      ↓
+Application deployed
+      ↓
+Update manifests
+      ↓
+oc diff
+      ↓
+oc apply
+      ↓
+Rolling update
+________________________________________
+Key Commands You Learned
+Command	Purpose
+oc login	login to cluster
+oc new-project	create namespace
+git clone	download manifests
+oc apply -f	create/update resources
+oc diff	compare live resources vs manifests
+oc get pods	view pod status
+oc rollout restart	restart deployment
+oc delete -f	delete resources
+
