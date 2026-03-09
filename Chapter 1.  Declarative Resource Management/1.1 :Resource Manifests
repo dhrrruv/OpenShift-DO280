@@ -1,0 +1,322 @@
+Resource Manifests (OpenShift / Kubernetes)
+Goal
+Deploy and update applications using YAML manifest files instead of long commands.
+A Resource Manifest is a file that describes a Kubernetes/OpenShift resource.
+Example resources:
+•	Pod
+•	Deployment
+•	Service
+•	ConfigMap
+•	PersistentVolumeClaim
+These are written in YAML files.
+Example:
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: myapp
+spec:
+  replicas: 2
+________________________________________
+Imperative vs Declarative Approach
+There are two ways to manage resources in OpenShift.
+Method	Meaning
+Imperative	Execute commands directly
+Declarative	Define desired state in YAML
+________________________________________
+Imperative Commands
+Imperative commands tell Kubernetes what to do immediately.
+Example:
+oc create deployment myapp --image=nginx
+This directly creates a deployment.
+Example with more parameters:
+oc create deployment db-pod --port 3306 \
+--image registry.example.com/mysql
+Problem with Imperative
+1️⃣ Hard to reproduce
+2️⃣ Hard to track changes
+3️⃣ No version control
+4️⃣ Not good for automation
+________________________________________
+Declarative Commands
+Declarative approach means:
+Define the desired state in YAML.
+Example manifest:
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello-openshift
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: hello-openshift
+  template:
+    metadata:
+      labels:
+        app: hello-openshift
+    spec:
+      containers:
+      - name: hello
+        image: quay.io/redhattraining/hello-world-nginx:v1.0
+Apply it with:
+oc apply -f deployment.yaml
+This creates or updates the deployment.
+________________________________________
+Why Declarative is Preferred
+Advantages:
+1. Reproducibility
+You can deploy the same application again easily.
+2. Version Control
+Store YAML in Git.
+Example:
+github repo
+   ├── deployment.yaml
+   ├── service.yaml
+   └── route.yaml
+3. GitOps Support
+GitOps tools like:
+•	ArgoCD
+•	Flux
+automatically apply YAML manifests.
+4. Easy rollback
+Just revert the Git commit.
+________________________________________
+Imperative Workflow Example
+Step-by-step development.
+Step 1 Create deployment
+oc create deployment db-pod --port 3306 \
+--image registry/mysql
+Output:
+deployment.apps/db-pod created
+________________________________________
+Step 2 Add environment variables
+oc set env deployment/db-pod \
+MYSQL_USER=user1 \
+MYSQL_PASSWORD=mypa55w0rd \
+MYSQL_DATABASE=items
+This modifies the deployment.
+________________________________________
+Step 3 Add other resources
+Examples:
+Create service
+oc expose deployment db-pod --port=3306
+Create route
+oc expose service db-pod
+________________________________________
+This is good for development but bad for production.
+________________________________________
+Creating Manifest Files
+Writing YAML manually is slow.
+There are three ways to generate YAML.
+________________________________________
+Method 1: From Web Console
+Open resource → YAML tab → copy manifest.
+________________________________________
+Method 2: Using dry-run
+Example:
+oc create deployment hello-openshift \
+--image quay.io/redhattraining/hello-world-nginx:v1.0 \
+-o yaml \
+--dry-run=client
+Explanation:
+Option	Meaning
+-o yaml	output YAML
+--dry-run=client	don't create resource
+Output example:
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello-openshift
+spec:
+  replicas: 1
+________________________________________
+Save YAML to file
+oc create deployment hello-openshift \
+--image nginx \
+-o yaml \
+--dry-run=client > deployment.yaml
+________________________________________
+Manifest Structure
+Every Kubernetes manifest has four main sections.
+apiVersion
+kind
+metadata
+spec
+Example:
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello-openshift
+spec:
+  replicas: 2
+________________________________________
+Important Deployment Fields
+Namespace
+metadata:
+  namespace: resource-manifests
+Ensures resource is created in correct project.
+________________________________________
+Replicas
+replicas: 2
+Number of pods.
+________________________________________
+Container Image
+containers:
+- name: nginx
+  image: nginx:latest
+Defines container.
+________________________________________
+Container Port
+ports:
+- containerPort: 8080
+Port exposed by container.
+________________________________________
+Multiple Resources in One YAML
+You can put multiple resources in one file.
+Separator:
+---
+Example:
+---
+kind: Deployment
+...
+---
+kind: Service
+...
+________________________________________
+Deploying Manifests
+Create resources
+oc create -f deployment.yaml
+________________________________________
+Create resources from directory
+oc create -f my-app/
+________________________________________
+Recursive directory
+oc create -R -f my-app/
+Meaning:
+•	Process all YAML files
+•	Include subdirectories
+________________________________________
+Updating Resources
+Instead of create, we use:
+oc apply
+Example:
+oc apply -f deployment.yaml
+This:
+1.	Creates resource if it doesn't exist
+2.	Updates resource if it exists
+________________________________________
+How oc apply Works
+It compares:
+1️⃣ Manifest file
+2️⃣ Current cluster state
+3️⃣ Last applied configuration
+Annotation used:
+kubectl.kubernetes.io/last-applied-configuration
+This helps Kubernetes track configuration changes.
+________________________________________
+Validating YAML Before Applying
+Always validate YAML.
+Command:
+oc apply -f deployment.yaml \
+--dry-run=server --validate=true
+Meaning
+Option	Purpose
+--dry-run=server	test on server without creating
+--validate=true	validate YAML schema
+Example output:
+deployment created (server dry-run)
+________________________________________
+Comparing Changes
+Use:
+oc diff -f deployment.yaml
+Purpose:
+Compare live resource vs manifest.
+Example output:
+- image: nginx:v1
++ image: nginx:latest
+Meaning:
+Image will change.
+This is useful in GitOps workflows.
+________________________________________
+Restarting Pods After Config Changes
+Example problem:
+You update:
+•	ConfigMap
+•	Secret
+Pods do not automatically restart.
+Solution:
+oc rollout restart deployment myapp
+This recreates pods.
+________________________________________
+Patching Resources
+Sometimes you want to modify small parts of a resource.
+Use:
+oc patch
+________________________________________
+Patch Example
+Update CPU request.
+oc patch deployment hello -p \
+'{"spec":{"template":{"spec":{"containers":[{"name":"hello","resources":{"requests":{"cpu":"100m"}}}]}}}}'
+Meaning:
+Set CPU request to 100 millicores.
+________________________________________
+Patch Using File
+Command:
+oc patch deployment hello --patch-file volume.yaml
+Example patch file:
+spec:
+  template:
+    spec:
+      volumes:
+      - name: www
+        persistentVolumeClaim:
+          claimName: nginx-www
+This mounts a Persistent Volume Claim.
+________________________________________
+Key Commands Summary
+Command	Purpose
+oc create deployment	create resource imperatively
+oc apply -f	create/update resource declaratively
+oc create -f	create resources from YAML
+oc diff -f	compare manifest with live object
+oc patch	modify existing object
+oc rollout restart	restart pods
+oc explain	view manifest field documentation
+________________________________________
+Example oc explain
+Command:
+oc explain deployment
+Shows fields in deployment.
+Deep explanation:
+oc explain deployment.spec.template.spec
+________________________________________
+Real Production Workflow
+Typical production workflow:
+1️⃣ Write manifests
+deployment.yaml
+service.yaml
+route.yaml
+2️⃣ Store in Git
+3️⃣ Validate
+oc apply --dry-run=server
+4️⃣ Compare
+oc diff
+5️⃣ Deploy
+oc apply -f .
+________________________________________
+Final Concept Summary
+Imperative:
+oc create deployment
+oc set env
+oc expose
+Declarative:
+deployment.yaml
+service.yaml
+route.yaml
+oc apply -f .
+Declarative is preferred because:
+•	reproducible
+•	version controlled
+•	GitOps friendly
+•	easier updates
+
