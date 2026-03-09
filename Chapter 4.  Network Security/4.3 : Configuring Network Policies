@@ -1,0 +1,396 @@
+Configuring Network Policies
+
+1. What is a Network Policy?
+Definition
+A NetworkPolicy is a Kubernetes/OpenShift resource that controls which pods can communicate with other pods.
+It works like a firewall inside the cluster.
+Example control:
+Pod A → Pod B  (allowed)
+Pod C → Pod B  (blocked)
+________________________________________
+2. Default Network Behavior in OpenShift
+By default:
+All pods can communicate with all pods
+Example:
+namespace1/podA → namespace2/podB  ✔ allowed
+namespace2/podC → namespace1/podD  ✔ allowed
+Meaning:
+Open network
+This is not secure for production systems.
+________________________________________
+3. Why Network Policies Are Needed
+Enterprise applications require network isolation.
+Example architecture:
+Frontend → Backend → Database
+Security requirement:
+Frontend → Backend  ✔
+Backend → Database  ✔
+Frontend → Database ✖
+Network policies enforce this rule.
+________________________________________
+4. Network Policies Use Labels (Not IP)
+Traditional firewall:
+Allow IP 10.0.0.1
+Kubernetes NetworkPolicy:
+Allow pods with label app=frontend
+Why labels?
+Pods are dynamic:
+Pod deleted → new IP assigned
+Labels stay constant.
+Example pod label:
+app=frontend
+tier=backend
+role=db
+________________________________________
+5. Network Policy Scope
+Network policies operate on:
+Pods
+Namespaces
+Ports
+Protocols
+They can control:
+Ingress  → incoming traffic
+Egress   → outgoing traffic
+________________________________________
+6. Important Limitation
+Network policies do not block host networking pods on the same node.
+Example:
+Ingress router pods
+Monitoring pods
+These may bypass some restrictions unless explicitly allowed.
+________________________________________
+7. Types of Network Policies in OpenShift
+OpenShift supports 2 types:
+1️⃣ NetworkPolicy (NP)
+Scope:
+Namespace
+Created by:
+Developers
+Namespace admins
+Used for:
+Application level security
+________________________________________
+2️⃣ AdminNetworkPolicy (ANP)
+Scope:
+Cluster wide
+Created by:
+Cluster administrators
+Used for:
+Global security rules
+________________________________________
+8. Evaluation Order
+OpenShift networking engine:
+OVN-Kubernetes
+It evaluates policies in tiers.
+Tier 1 → AdminNetworkPolicy
+Tier 2 → NetworkPolicy
+Evaluation flow:
+Traffic request
+      ↓
+AdminNetworkPolicy checked
+      ↓
+If match → allow/deny
+      ↓
+If no match → NetworkPolicy checked
+Meaning:
+ANP has higher priority
+________________________________________
+9. Network Policies Are Additive
+Multiple policies can apply to the same pod.
+Allowed traffic = union of all policies.
+Example:
+Policy A allows:
+Frontend → Backend
+Policy B allows:
+Monitoring → Backend
+Final allowed traffic:
+Frontend → Backend
+Monitoring → Backend
+________________________________________
+10. Default Deny Policy (Very Important)
+Best practice:
+First deny everything
+Then allow required traffic
+Example YAML:
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: default-deny
+spec:
+  podSelector: {}
+Explanation
+Field	Meaning
+podSelector {}	apply to all pods
+no ingress rules	block all incoming traffic
+Effect:
+Nothing can access the pods
+Unless another policy allows it.
+________________________________________
+11. Basic Network Policy Structure
+Example:
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-frontend
+spec:
+  podSelector:
+    matchLabels:
+      app: backend
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: frontend
+Meaning:
+Frontend pods can access backend pods
+________________________________________
+12. Communication Between Namespaces
+Namespaces can also be selected using labels.
+Example label a namespace:
+Command:
+oc label namespace network-1 network=network-1
+Meaning:
+Add label network=network-1
+________________________________________
+13. Example Policy (Cross Namespace)
+Policy in network-1 namespace
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: network-1-policy
+  namespace: network-1
+spec:
+  podSelector:
+    matchLabels:
+      deployment: product-catalog
+This selects pods:
+deployment=product-catalog
+________________________________________
+Ingress Rule
+ingress:
+- from:
+Defines who can connect.
+________________________________________
+Namespace Selector
+namespaceSelector:
+  matchLabels:
+    network: network-2
+Meaning:
+Allow traffic from namespace network-2
+________________________________________
+Pod Selector
+podSelector:
+  matchLabels:
+    role: qa
+Meaning:
+Only pods with label role=qa
+________________________________________
+Port Restriction
+ports:
+- port: 8080
+  protocol: TCP
+Meaning:
+Only allow TCP 8080
+________________________________________
+Final Rule
+Allowed traffic:
+network-2 namespace
+        ↓
+pods with role=qa
+        ↓
+product-catalog pods
+        ↓
+TCP port 8080
+________________________________________
+14. Less Restrictive Policy
+Example in network-2 namespace
+podSelector: {}
+Means:
+All pods in namespace
+Rule:
+namespaceSelector:
+  matchLabels:
+    network: network-1
+Meaning:
+Allow any pod from network-1 namespace
+________________________________________
+15. Logical AND vs OR
+This is very important for exams.
+________________________________________
+Logical AND
+Example:
+from:
+- namespaceSelector:
+    matchLabels:
+      network: dev
+  podSelector:
+    matchLabels:
+      app: mobile
+Meaning BOTH must match:
+Namespace label = dev
+AND
+Pod label = mobile
+________________________________________
+Logical OR
+Example:
+from:
+- namespaceSelector:
+    matchLabels:
+      network: dev
+- podSelector:
+    matchLabels:
+      app: mobile
+Meaning:
+Namespace = dev
+OR
+Pod label = mobile
+________________________________________
+16. Allowing OpenShift Router Access
+When network policies block everything, routes may stop working.
+Because router pods live in:
+openshift-ingress namespace
+Allow router traffic:
+kind: NetworkPolicy
+metadata:
+  name: allow-from-openshift-ingress
+spec:
+  podSelector: {}
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          policy-group.network.openshift.io/ingress: ""
+Meaning:
+Allow traffic from router pods
+________________________________________
+17. Allow Monitoring Access
+Monitoring namespace:
+openshift-monitoring
+Policy:
+kind: NetworkPolicy
+metadata:
+  name: allow-from-openshift-monitoring
+spec:
+  podSelector: {}
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          network.openshift.io/policy-group: monitoring
+Meaning:
+Allow Prometheus monitoring
+________________________________________
+18. AdminNetworkPolicy (Cluster Level)
+AdminNetworkPolicy allows cluster-wide security rules.
+API:
+policy.networking.k8s.io/v1alpha1
+Example:
+Block traffic from untrusted namespaces.
+apiVersion: policy.networking.k8s.io/v1alpha1
+kind: AdminNetworkPolicy
+metadata:
+  name: block-untrusted
+________________________________________
+Priority
+priority: 100
+Range:
+1–100
+Lower number = higher priority.
+________________________________________
+Subject
+subject:
+  namespaceSelector: {}
+Meaning:
+Apply rule to all namespaces
+________________________________________
+Deny Rule
+ingress:
+- from:
+  - namespaceSelector:
+      matchLabels:
+        untrusted: true
+  action: Deny
+Meaning:
+Block traffic from namespaces labeled:
+
+untrusted=true
+________________________________________
+19. Example: Deny All Traffic to Sensitive Namespace
+kind: AdminNetworkPolicy
+spec:
+  priority: 10
+  subject:
+    namespaces:
+      matchLabels:
+        sensitive: true
+  ingress: []
+Meaning:
+No traffic allowed
+To namespaces with label:
+sensitive=true
+________________________________________
+20. Example: Allow Egress to External Database
+Example:
+egress:
+- to:
+  - ipBlock:
+      cidr: 10.0.0.0/24
+Meaning:
+Pods can connect to:
+10.0.0.0/24 network
+________________________________________
+Port Restriction
+ports:
+- port: 3306
+  protocol: TCP
+Meaning:
+Allow MySQL database access
+________________________________________
+21. Important oc Commands
+Create network policy:
+oc apply -f policy.yaml
+List policies:
+oc get networkpolicy
+Describe policy:
+oc describe networkpolicy
+Delete policy:
+oc delete networkpolicy policy-name
+Label namespace:
+oc label namespace dev network=dev
+________________________________________
+22. Real Production Architecture Example
+Example microservice architecture:
+Internet
+   │
+Router
+   │
+Frontend
+   │
+Backend
+   │
+Database
+Policies:
+Router → Frontend ✔
+Frontend → Backend ✔
+Backend → Database ✔
+
+Frontend → Database ✖
+External → Database ✖
+________________________________________
+23. Key EX280 Exam Points
+Remember:
+1️⃣ Network policies use labels not IPs
+2️⃣ Default behavior:
+All traffic allowed
+3️⃣ Best practice:
+default deny policy
+4️⃣ Policy types:
+NetworkPolicy (namespace)
+AdminNetworkPolicy (cluster)
+5️⃣ Policy logic:
+Same rule = AND
+Separate rules = OR
+6️⃣ Must allow:
+openshift-ingress
+openshift-monitoring
+
