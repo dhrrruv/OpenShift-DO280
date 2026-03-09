@@ -1,0 +1,306 @@
+1. What is Helm? (Theory)
+Helm is the package manager for Kubernetes/OpenShift.
+Just like:
+•	apt installs packages in Ubuntu
+•	yum/dnf installs packages in RHEL
+👉 Helm installs applications in Kubernetes using packages called Charts.
+A Helm Chart contains:
+•	Kubernetes manifests (Deployment, Service, Route, etc.)
+•	Templates
+•	Default configuration values
+So instead of writing many YAML files manually, you run one Helm command.
+Example:
+helm install myapp nginx-chart
+Helm automatically creates:
+•	Deployment
+•	Service
+•	ConfigMaps
+•	Routes
+•	other resources
+________________________________________
+2. Important Helm Concepts
+Chart
+A chart is a packaged Kubernetes application.
+Example:
+etherpad chart
+nginx chart
+prometheus chart
+________________________________________
+Repository
+A repository stores Helm charts.
+Example repository URL:
+http://helm.ocp4.example.com/charts
+Works like:
+•	Docker registry
+•	yum repo
+________________________________________
+Release
+A release is a running instance of a chart.
+Example:
+helm install example-app etherpad
+Here:
+example-app = release name
+etherpad = chart name
+You can install same chart multiple times with different release names.
+Example:
+helm install dev etherpad
+helm install prod etherpad
+________________________________________
+3. Start the Lab
+lab start packaged-charts
+What it does
+•	prepares environment
+•	ensures OpenShift API is reachable
+•	resets lab environment
+________________________________________
+4. Check Existing Helm Repositories
+Command:
+helm repo list
+Output:
+Error: no repositories to show
+Meaning:
+👉 No chart repositories are configured.
+________________________________________
+5. Add Helm Repository
+Command:
+helm repo add do280-repo http://helm.ocp4.example.com/charts
+Explanation:
+Part	Meaning
+helm repo add	add new chart repository
+do280-repo	local name for repo
+URL	where charts are stored
+Output:
+"do280-repo" has been added
+________________________________________
+6. Search Charts in Repository
+Command:
+helm search repo --versions
+Example output:
+NAME                     CHART VERSION
+do280-repo/etherpad      0.0.7
+do280-repo/etherpad      0.0.6
+Meaning:
+Chart etherpad has two versions:
+0.0.6
+0.0.7
+________________________________________
+7. View Default Chart Configuration
+Command:
+helm show values do280-repo/etherpad --version 0.0.6
+This shows default configuration parameters.
+Example:
+replicaCount: 1
+Meaning:
+Default number of pods = 1
+________________________________________
+Example:
+image:
+  repository: etherpad
+  tag: latest
+Meaning:
+Default image:
+docker.io/etherpad/etherpad:latest
+But classroom environment is offline.
+So we must use local registry.
+________________________________________
+8. Create Custom Configuration (values.yaml)
+Create file:
+values.yaml
+Content:
+image:
+  repository: registry.ocp4.example.com:8443/etherpad
+  name: etherpad
+  tag: 1.8.18
+
+route:
+  host: development-etherpad.apps.ocp4.example.com
+Why?
+To override chart defaults.
+Default image:
+docker.io
+Custom image:
+registry.ocp4.example.com
+Also set custom route hostname.
+________________________________________
+9. Login to OpenShift
+Command:
+oc login -u developer -p developer https://api.ocp4.example.com:6443
+Explanation:
+Part	Meaning
+oc login	login to cluster
+-u developer	username
+-p developer	password
+URL	OpenShift API
+________________________________________
+10. Create Project (Namespace)
+Command:
+oc new-project packaged-charts-development
+Explanation:
+Creates namespace for application.
+Result:
+packaged-charts-development
+________________________________________
+11. Install Helm Chart
+Command:
+helm install example-app do280-repo/etherpad \
+-f values.yaml --version 0.0.6
+Explanation:
+Part	Meaning
+helm install	install chart
+example-app	release name
+do280-repo/etherpad	chart
+-f values.yaml	custom config
+--version 0.0.6	chart version
+Helm will create:
+Deployment
+Service
+Route
+Pods
+________________________________________
+12. Check Application Route
+Command:
+oc get route
+Example output:
+example-app-etherpad
+development-etherpad.apps.ocp4.example.com
+Meaning:
+Application URL:
+https://development-etherpad.apps.ocp4.example.com
+________________________________________
+13. Verify Installed Helm Releases
+Command:
+helm list
+Example output:
+NAME         NAMESPACE                    CHART
+example-app  packaged-charts-development  etherpad-0.0.6
+Meaning:
+Release:
+example-app
+Chart version:
+0.0.6
+________________________________________
+14. Upgrade Helm Chart
+New version available:
+0.0.7
+Upgrade command:
+helm upgrade example-app do280-repo/etherpad \
+-f values.yaml --version 0.0.7
+Explanation:
+Part	Meaning
+helm upgrade	update release
+example-app	release name
+chart	same chart
+values.yaml	config
+version	new version
+Output:
+REVISION: 2
+Meaning:
+Deployment updated.
+________________________________________
+15. Deploy Production Version
+Create production namespace.
+oc new-project packaged-charts-production
+________________________________________
+16. Edit values.yaml
+Change route:
+route:
+  host: etherpad.apps.ocp4.example.com
+________________________________________
+17. Install Production Deployment
+Command:
+helm install production do280-repo/etherpad \
+-f values.yaml --version 0.0.7
+Explanation:
+production = release name
+Now you have:
+Development deployment
+Production deployment
+Both using same chart.
+________________________________________
+18. Check Pods
+Command:
+oc get pods
+Example:
+production-etherpad-xxxx
+Pods running.
+________________________________________
+19. Scale Application
+Edit values.yaml:
+replicaCount: 3
+Meaning:
+Run 3 pods instead of 1.
+________________________________________
+20. Apply Changes
+Command:
+helm upgrade production do280-repo/etherpad -f values.yaml
+Helm updates deployment.
+________________________________________
+21. Verify Scaling
+Command:
+oc get pods
+Output:
+production-etherpad-xxx
+production-etherpad-xxx
+production-etherpad-xxx
+Now:
+3 pods running
+Load balancing works automatically.
+________________________________________
+22. Remove values.yaml
+Command:
+rm values.yaml
+Cleanup file.
+________________________________________
+23. Finish Lab
+Command:
+lab finish packaged-charts
+Purpose:
+•	remove created resources
+•	reset environment
+Important before next lab.
+________________________________________
+24. Key Helm Commands Summary
+Add repo
+helm repo add NAME URL
+________________________________________
+List repos
+helm repo list
+________________________________________
+Search charts
+helm search repo
+________________________________________
+Show values
+helm show values CHART
+________________________________________
+Install chart
+helm install RELEASE CHART
+________________________________________
+List releases
+helm list
+________________________________________
+Upgrade release
+helm upgrade RELEASE CHART
+________________________________________
+Remove release
+helm uninstall RELEASE
+________________________________________
+25. Key Concepts for EX280 Exam
+Remember:
+Concept	Meaning
+Helm	Kubernetes package manager
+Chart	packaged application
+Repository	chart storage
+Release	installed chart instance
+values.yaml	custom configuration
+helm install	deploy chart
+helm upgrade	update deployment
+________________________________________
+✅ This exercise teaches:
+•	Helm repositories
+•	Helm charts
+•	Chart installation
+•	Chart upgrades
+•	Environment customization
+•	Application scaling
+•	Multi-environment deployment
+
