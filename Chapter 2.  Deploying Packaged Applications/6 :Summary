@@ -1,0 +1,262 @@
+1. Using Templates in OpenShift
+Theory
+An OpenShift Template is a parameterized resource definition that allows you to deploy applications multiple times with different values.
+Instead of writing separate YAML files, you define variables (parameters) inside a template.
+Example use cases:
+•	Deploy the same app in dev, test, prod
+•	Use different image versions
+•	Use different database passwords
+•	Use different replica counts
+A template usually contains:
+•	Deployment
+•	Service
+•	Route
+•	ConfigMap
+•	Parameters
+________________________________________
+Example Template Parameter
+Example template variable:
+parameters:
+- name: APP_NAME
+  value: myapp
+Then used in resources:
+metadata:
+  name: ${APP_NAME}
+During deployment you can change the value.
+________________________________________
+2. Upload Template to OpenShift
+Command:
+oc create -f template.yaml
+Explanation
+Part	Meaning
+oc	OpenShift CLI
+create	create resource
+-f	file
+template.yaml	template file
+This uploads the template to the current project (namespace).
+Example:
+oc create -f wordpress-template.yaml
+Now the template is available in the project.
+________________________________________
+3. Process a Template
+Templates must be processed before deployment.
+Command:
+oc process template-name
+Example:
+oc process mysql-template
+What happens?
+The template engine:
+1.	replaces parameters
+2.	generates Kubernetes objects
+3.	outputs YAML
+Example output:
+Deployment
+Service
+Route
+________________________________________
+4. Deploy Processed Resources
+To deploy processed resources:
+oc process template.yaml | oc apply -f -
+Explanation
+Part	Meaning
+oc process	process template
+	pipe output
+oc apply	deploy resources
+-f -	read from STDIN
+Example workflow:
+oc process wordpress-template | oc apply -f -
+This creates all resources.
+________________________________________
+5. Passing Template Parameters
+You can customize template parameters.
+Method 1 — Using -p
+Command:
+oc process template.yaml -p PARAM=value
+Example:
+oc process wordpress-template -p APP_NAME=myblog
+________________________________________
+Method 2 — Using Parameter File
+Command:
+oc process template.yaml --param-file=params.env
+Example params.env:
+APP_NAME=myblog
+DB_PASSWORD=secret
+This is useful for large deployments.
+________________________________________
+6. Helm Repositories
+Theory
+A Helm repository stores Helm charts.
+Similar to:
+System	Package Repo
+Linux	yum repo
+Docker	container registry
+Helm	chart repository
+Examples:
+•	ArtifactHub
+•	Bitnami Helm repo
+•	Red Hat Helm repo
+________________________________________
+Add Helm Repository
+Command:
+helm repo add repo-name repo-url
+Example:
+helm repo add do280-repo http://helm.ocp4.example.com/charts
+What happens?
+Helm stores repo info in:
+~/.config/helm/repositories.yaml
+This file contains:
+repo name
+repo URL
+________________________________________
+7. Search Helm Charts
+Command:
+helm search repo
+Example:
+helm search repo etherpad
+This searches all configured repositories.
+Example output:
+do280-repo/etherpad
+________________________________________
+8. Inspect Helm Charts
+Before installing a chart you should inspect it.
+Helm provides two useful commands.
+________________________________________
+Show Chart Metadata
+Command:
+helm show chart chart-reference
+Example:
+helm show chart do280-repo/etherpad
+Shows:
+•	chart name
+•	version
+•	description
+•	maintainers
+•	dependencies
+Example output:
+name: etherpad
+version: 0.0.7
+description: Etherpad collaborative editor
+________________________________________
+Show Default Configuration
+Command:
+helm show values chart-reference
+Example:
+helm show values do280-repo/etherpad
+Shows default values.yaml.
+Example:
+replicaCount: 1
+
+image:
+  repository: etherpad
+  tag: latest
+These values can be overridden using values.yaml.
+________________________________________
+9. Install Helm Chart
+Command:
+helm install release-name chart-reference
+Example:
+helm install myapp do280-repo/etherpad
+Explanation
+Part	Meaning
+helm install	deploy chart
+release-name	instance name
+chart-reference	chart
+Helm creates:
+•	Deployment
+•	Service
+•	Route
+•	ConfigMaps
+•	Secrets
+________________________________________
+10. List Installed Releases
+Command:
+helm list
+Example output:
+NAME        NAMESPACE        CHART
+example-app dev              etherpad-0.0.7
+Meaning:
+Field	Meaning
+NAME	release name
+NAMESPACE	project
+CHART	chart version
+________________________________________
+11. View Release History
+Helm tracks deployment versions.
+Command:
+helm history release-name
+Example:
+helm history example-app
+Example output:
+REVISION  STATUS     CHART
+1         deployed   etherpad-0.0.6
+2         deployed   etherpad-0.0.7
+Meaning:
+Revision	Meaning
+1	first install
+2	upgrade
+This helps with rollback.
+Example rollback command:
+helm rollback example-app 1
+________________________________________
+12. OpenShift Templates vs Helm Charts
+Feature	OpenShift Template	Helm
+Parameterization	Yes	Yes
+Package management	No	Yes
+Version control	No	Yes
+Release history	No	Yes
+Upgrade capability	Limited	Excellent
+Helm is more powerful.
+________________________________________
+13. Typical Deployment Workflow
+Using Templates
+create template
+      ↓
+oc process
+      ↓
+oc apply
+      ↓
+resources created
+________________________________________
+Using Helm
+add repo
+     ↓
+search chart
+     ↓
+inspect chart
+     ↓
+helm install
+     ↓
+helm upgrade
+________________________________________
+14. Key Commands for EX280
+Template Commands
+Create template:
+oc create -f template.yaml
+Process template:
+oc process template.yaml
+Deploy template:
+oc process template.yaml | oc apply -f -
+Add parameters:
+oc process template.yaml -p NAME=value
+________________________________________
+Helm Commands
+Add repo:
+helm repo add NAME URL
+Search charts:
+helm search repo
+View chart:
+helm show chart CHART
+View values:
+helm show values CHART
+Install chart:
+helm install RELEASE CHART
+List releases:
+helm list
+View history:
+helm history RELEASE
+________________________________________
+✅ Main idea of this section:
+•	OpenShift Templates = parameterized manifests
+•	Helm = Kubernetes package manager
+•	Helm provides versioning, upgrades, and release management
+
