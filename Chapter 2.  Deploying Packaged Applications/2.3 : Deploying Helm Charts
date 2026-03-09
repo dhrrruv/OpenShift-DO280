@@ -1,0 +1,384 @@
+
+
+
+1. What is Helm
+Concept
+Helm (Kubernetes package manager) is a tool used to package, deploy, and manage Kubernetes applications.
+It works like a package manager for Kubernetes, similar to:
+System	Package Manager
+Linux	apt / yum
+Python	pip
+NodeJS	npm
+Kubernetes	Helm
+Helm simplifies deployment of complex applications with many resources.
+________________________________________
+2. Helm Core Concepts
+Helm introduces several important concepts.
+1️⃣ Chart
+A Chart is a package containing Kubernetes manifests.
+It includes:
+•	Deployments
+•	Services
+•	ConfigMaps
+•	Routes
+•	Secrets
+Example:
+nginx-chart
+wordpress-chart
+mysql-chart
+Charts make it easy to share applications.
+________________________________________
+2️⃣ Release
+A Release is a running instance of a Helm chart.
+Example:
+Chart:
+wordpress-chart
+You can deploy it multiple times:
+release1
+release2
+release3
+Each deployment = one release.
+________________________________________
+3️⃣ Chart Versions
+Charts have versions.
+Example:
+wordpress-chart v1.0
+wordpress-chart v1.1
+wordpress-chart v2.0
+Versions allow upgrades.
+________________________________________
+3. Helm Chart Structure
+A Helm chart has a specific directory structure.
+Example:
+sample/
+├── Chart.yaml
+├── values.yaml
+└── templates/
+      example.yaml
+________________________________________
+Chart.yaml
+Contains metadata about the chart.
+Example:
+name: examplechart
+version: 0.1.0
+description: A Helm chart for Kubernetes
+Fields:
+Field	Meaning
+name	chart name
+version	chart version
+description	description
+maintainers	authors
+________________________________________
+templates/
+This directory contains Kubernetes resource definitions.
+Example:
+Deployment
+Service
+ConfigMap
+Route
+Helm uses Go templates to dynamically generate resources.
+Example:
+image: {{ .Values.image.repository }}
+This reads values from values.yaml.
+________________________________________
+values.yaml
+Contains default configuration values.
+Example:
+image:
+  repository: nginx
+  tag: 1.8.10
+  pullPolicy: IfNotPresent
+These values can be overridden during deployment.
+________________________________________
+4. Inspecting Helm Charts
+Before deploying a chart, you should inspect it.
+________________________________________
+View Chart Metadata
+Command:
+helm show chart chart-name
+Example output:
+name: examplechart
+version: 0.1.0
+description: A Helm chart for Kubernetes
+Shows:
+•	chart name
+•	version
+•	maintainers
+•	source repo
+________________________________________
+View Default Values
+Command:
+helm show values chart-name
+Example output:
+image:
+  repository: sample
+  tag: 1.8.10
+This helps you know which values you can customize.
+________________________________________
+5. Installing Helm Charts
+Helm uses the helm install command.
+Syntax:
+helm install RELEASE_NAME CHART
+Example:
+helm install my-release nginx-chart
+Explanation:
+Component	Meaning
+my-release	release name
+nginx-chart	chart name
+Helm then creates:
+deployments
+services
+pods
+configmaps
+________________________________________
+6. Choosing Namespace
+Helm deployments usually run in a specific namespace.
+Example:
+helm install my-release nginx-chart --namespace myproject
+If resources in the chart do not define namespaces, Helm places them in the target namespace.
+________________________________________
+7. Customizing Chart Values
+You can override default values.
+There are two ways:
+Method 1 — values.yaml file
+Example file:
+image:
+  tag: "1.8.10-patched"
+Install chart:
+helm install my-release nginx-chart \
+--values my-values.yaml
+________________________________________
+Method 2 — command line
+Example:
+helm install my-release nginx-chart \
+--set image.tag=1.8.10-patched
+________________________________________
+8. Preview Installation (Dry Run)
+You can preview what Helm will create.
+Command:
+helm install my-release nginx-chart \
+--dry-run --values my-values.yaml
+Output includes:
+MANIFEST:
+Deployment
+Service
+ConfigMap
+No resources are created.
+This is useful for testing configurations.
+________________________________________
+9. Helm Releases
+When a chart is installed:
+✔ Kubernetes resources are created
+✔ Helm creates a release record
+Release information is stored in:
+Kubernetes Secret
+Type:
+helm.sh/release.v1
+________________________________________
+10. View Releases
+Command:
+helm list
+Example output:
+NAME        NAMESPACE   STATUS
+my-release  example     deployed
+Options:
+Command	Description
+helm list	releases in current namespace
+helm list --all-namespaces	releases in cluster
+helm list -n namespace	releases in namespace
+________________________________________
+⚠️ Important
+Do NOT delete Helm release secrets manually.
+If deleted:
+Helm cannot manage the release anymore.
+________________________________________
+11. Upgrading Releases
+To update an application:
+helm upgrade release-name chart
+Example:
+helm upgrade my-release nginx-chart \
+--values new-values.yaml
+This updates:
+•	configuration values
+•	chart version
+•	application version
+________________________________________
+Preview Upgrade
+Always preview changes:
+helm upgrade my-release nginx-chart \
+--dry-run
+This prevents mistakes.
+________________________________________
+12. Helm Revision History
+Helm tracks release changes.
+Command:
+helm history release-name
+Example:
+REVISION STATUS
+1        installed
+2        upgraded
+Each update creates a new revision.
+________________________________________
+13. Rollback Releases
+If an upgrade fails, you can rollback.
+Command:
+helm rollback release-name revision
+Example:
+helm rollback my-release 1
+This restores revision 1.
+________________________________________
+⚠️ Important
+Rollback may cause problems if:
+•	database schema changed
+•	incompatible versions exist
+Always test rollback in staging.
+________________________________________
+14. Helm Repositories
+Helm charts are usually stored in repositories.
+Example repository:
+https://charts.openshift.io
+________________________________________
+Add Repository
+helm repo add openshift-helm-charts \
+https://charts.openshift.io/
+________________________________________
+List Repositories
+helm repo list
+________________________________________
+Update Repository
+helm repo update
+Updates chart index.
+________________________________________
+Search Charts
+helm search repo
+Example:
+NAME
+repo/nginx
+repo/mysql
+repo/postgres
+________________________________________
+Show All Chart Versions
+helm search repo nginx --versions
+________________________________________
+Install Specific Version
+helm install my-release nginx \
+--version 1.2.0
+________________________________________
+15. Using Helm in the OpenShift Web Console
+In Red Hat OpenShift Web Console, Helm can be managed from the Developer perspective.
+Steps:
+1️⃣ Switch to Developer perspective
+2️⃣ Click Add
+3️⃣ Select Developer Catalog
+4️⃣ Filter:
+Type → Helm Charts
+5️⃣ Select chart
+6️⃣ Click:
+Install Helm Chart
+________________________________________
+During installation you configure:
+Setting	Description
+Release Name	unique deployment name
+Namespace	project
+Values	configuration values
+Chart Version	version to deploy
+________________________________________
+16. Managing Helm Releases in Console
+The console provides:
+Helm Page
+Shows:
+Release name
+Status
+Revision
+Chart version
+________________________________________
+Topology View
+Shows visual graph of:
+Helm Release
+ ├── Deployment
+ ├── Service
+ ├── Route
+ └── Pods
+________________________________________
+Release Details Page
+Shows:
+Section	Description
+Details	chart version and status
+Resources	Kubernetes resources
+Release History	upgrades and rollbacks
+Upgrade	update chart
+Rollback	revert version
+Notes	installation notes
+________________________________________
+17. Upgrading a Release in Console
+Steps:
+1️⃣ Go to Helm page
+2️⃣ Select release
+3️⃣ Click Upgrade
+4️⃣ Modify:
+•	chart version
+•	values.yaml
+5️⃣ Click Upgrade
+A new revision is created.
+________________________________________
+18. Rolling Back a Release
+Steps:
+1️⃣ Go to Helm page
+2️⃣ Open release
+3️⃣ Go to Revision History
+4️⃣ Select revision
+5️⃣ Click Rollback
+Helm restores previous version.
+________________________________________
+19. Uninstalling a Helm Release
+To remove the application:
+CLI command:
+helm uninstall release-name
+Example:
+helm uninstall my-release
+This deletes:
+deployments
+services
+pods
+routes
+⚠️ Warning
+If the chart deletes PVCs:
+persistent data may be lost
+________________________________________
+20. Helm Workflow in Production
+Typical workflow:
+1️⃣ Add repository
+helm repo add
+2️⃣ Search chart
+helm search repo
+3️⃣ Inspect chart
+helm show values
+4️⃣ Create values file
+my-values.yaml
+5️⃣ Install chart
+helm install
+6️⃣ Upgrade chart
+helm upgrade
+7️⃣ Rollback if needed
+helm rollback
+________________________________________
+Templates vs Helm (Important)
+Feature	OpenShift Templates	Helm
+Package manager	No	Yes
+Versioning	No	Yes
+Complex apps	Limited	Excellent
+Community support	Low	Very High
+Helm is now the most common method for deploying Kubernetes apps.
+________________________________________
+✅ EX280 Important Commands
+helm show chart
+helm show values
+helm install
+helm list
+helm upgrade
+helm rollback
+helm repo add
+helm search repo
+helm uninstall
+
+
