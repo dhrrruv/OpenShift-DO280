@@ -1,0 +1,328 @@
+Guided Exercise: Protect External Traffic with TLS
+Goal of This Exercise
+Main goal:
+Expose an application securely using TLS
+You will learn:
+1.	Deploy application
+2.	Create HTTP route
+3.	Create TLS Edge Route
+4.	Generate TLS certificate
+5.	Store certificate in Secret
+6.	Mount secret inside Pod
+7.	Create Passthrough TLS Route
+8.	Verify encrypted communication
+________________________________________
+2. Prepare the Lab
+Command:
+lab start network-ingress
+Purpose:
+•	Starts lab environment
+•	Ensures cluster API works
+•	Creates project environment
+•	Grants developer permissions
+________________________________________
+3. Login and Create Project
+Login:
+oc login -u developer -p developer https://api.ocp4.example.com:6443
+Explanation:
+Option	Meaning
+-u	username
+-p	password
+URL	OpenShift API server
+________________________________________
+Create project:
+oc new-project network-ingress
+Purpose:
+Creates namespace where application will run.
+Equivalent Kubernetes concept:
+Namespace
+________________________________________
+4. Deploy Application (HTTP Version)
+Deployment file:
+todo-app-v1.yaml
+Image used:
+todo-angular:v1.1
+This version supports only HTTP (port 8080).
+Command:
+oc create -f ~/DO280/labs/network-ingress/todo-app-v1.yaml
+Explanation:
+Option	Meaning
+create	create resource
+-f	file
+yaml	resource configuration
+Resources created:
+Deployment
+Service
+Output example:
+deployment.apps/todo-http created
+service/todo-http created
+________________________________________
+5. Verify Application
+Command:
+oc status
+Purpose:
+Shows project resources.
+Example output:
+svc/todo-http
+deployment/todo-http
+pod running
+Architecture now:
+Pod (todo-angular)
+      │
+      ▼
+Service (todo-http)
+Still not accessible outside cluster.
+________________________________________
+6. Expose Application (Create Route)
+Command:
+oc expose svc todo-http \
+--hostname todo-http.apps.ocp4.example.com
+Explanation:
+Option	Meaning
+expose	create route
+svc	service
+hostname	public URL
+Now architecture:
+Internet
+   │
+Router
+   │
+Service
+   │
+Pod
+Check route:
+oc get routes
+Example:
+NAME        HOST/PORT
+todo-http   todo-http.apps.ocp4.example.com
+Access:
+http://todo-http.apps.ocp4.example.com
+This is HTTP only (not secure).
+________________________________________
+7. Capture Network Traffic (HTTP)
+Command:
+sudo tcpdump -i eth0 -A -n port 80
+Explanation:
+Option	Meaning
+-i eth0	interface
+-A	ASCII output
+-n	no DNS resolution
+port 80	HTTP traffic
+When refreshing page you see:
+angular.min.js
+angular-route.min.js
+This proves:
+HTTP traffic is visible in plain text
+Meaning:
+Not secure
+________________________________________
+8. Create Encrypted Edge Route
+Command:
+oc create route edge todo-https \
+--service todo-http \
+--hostname todo-https.apps.ocp4.example.com
+Explanation:
+Option	Meaning
+route edge	TLS edge route
+todo-https	route name
+service	backend service
+hostname	public URL
+Architecture:
+Client (HTTPS)
+      │
+      ▼
+Router (TLS termination)
+      │
+      ▼
+Service (HTTP)
+      │
+      ▼
+Pod
+Encryption:
+Client → Router = encrypted
+Router → Pod = plain HTTP
+________________________________________
+9. Check Certificate
+Command:
+curl -I -v https://todo-https.apps.ocp4.example.com
+Important output:
+Server certificate
+subjectAltName
+issuer
+SSL certificate verify ok
+Meaning:
+Router generated certificate automatically
+Issuer example:
+Red Hat Training Certificate Authority
+________________________________________
+10. Verify Internal Traffic
+Retrieve service IP:
+oc get svc todo-http -o jsonpath="{.spec.clusterIP}"
+Example:
+172.30.102.29
+________________________________________
+Create debug pod:
+oc debug -t deployment/todo-http \
+--image registry.ocp4.example.com:8443/ubi8/ubi:8.4
+Purpose:
+Temporary container for testing.
+________________________________________
+Test HTTP internally:
+curl -v 172.30.102.29
+Result:
+HTTP/1.1 200 OK
+This proves:
+internal traffic is NOT encrypted
+________________________________________
+11. Delete Edge Route
+Command:
+oc delete route todo-https
+Purpose:
+We will now create passthrough TLS route.
+________________________________________
+12. Generate TLS Certificates
+Go to certificate directory:
+cd ~/DO280/labs/network-ingress/certs
+________________________________________
+Step 1 Generate Private Key
+openssl genrsa -out training.key 4096
+Meaning:
+Parameter	Description
+genrsa	generate RSA key
+4096	key size
+training.key	private key file
+________________________________________
+Step 2 Create Certificate Request
+openssl req -new \
+-key training.key -out training.csr \
+-subj "/C=US/ST=North Carolina/L=Raleigh/O=Red Hat/CN=todo-https.apps.ocp4.example.com"
+Purpose:
+Create CSR (Certificate Signing Request).
+Important field:
+CN = hostname
+________________________________________
+Step 3 Sign Certificate
+openssl x509 -req -in training.csr \
+-CA training-CA.pem \
+-CAkey training-CA.key \
+-out training.crt
+Purpose:
+CA signs certificate.
+Files created:
+training.key
+training.csr
+training.crt
+________________________________________
+13. Create TLS Secret
+Command:
+oc create secret tls todo-certs \
+--cert certs/training.crt \
+--key certs/training.key
+Explanation:
+Option	Meaning
+secret tls	TLS secret
+--cert	certificate
+--key	private key
+Secret will be mounted in pod.
+________________________________________
+14. Deploy TLS Application Version
+Deployment file:
+todo-app-v2.yaml
+New features:
+•	HTTPS server
+•	port 8443
+•	TLS secret mounted
+Command:
+oc create -f todo-app-v2.yaml
+Check mounted volume:
+oc set volumes deployment/todo-https
+Example:
+secret/todo-certs mounted at
+/usr/local/etc/ssl/certs
+Meaning:
+Application can read certificate.
+________________________________________
+15. Create Passthrough Route
+Command:
+oc create route passthrough todo-https \
+--service todo-https \
+--port 8443 \
+--hostname todo-https.apps.ocp4.example.com
+Architecture now:
+Client
+  │ HTTPS
+  ▼
+Router
+  │ HTTPS (passthrough)
+  ▼
+Service
+  │ HTTPS
+  ▼
+Pod
+Router does not decrypt traffic.
+________________________________________
+16. Test TLS Route
+Command:
+curl -vv -I \
+--cacert certs/training-CA.pem \
+https://todo-https.apps.ocp4.example.com
+Important output:
+SSL certificate verify ok
+Meaning:
+Certificate chain valid
+________________________________________
+17. Verify Encryption Internally
+Get service IP:
+oc get svc todo-https -o jsonpath="{.spec.clusterIP}"
+________________________________________
+Create debug pod:
+oc debug -t deployment/todo-https \
+--image registry.ocp4.example.com:8443/ubi8/ubi:8.4
+________________________________________
+Test HTTP:
+curl -I http://172.30.121.154
+Output:
+301 Moved Permanently
+Location: https://172.30.121.154:8443
+Meaning:
+HTTP redirect to HTTPS
+________________________________________
+Test HTTPS:
+curl -k https://172.30.121.154:8443
+Result:
+HTML output
+Application works securely.
+________________________________________
+18. Clean Up
+Delete project:
+oc delete project network-ingress
+Finish lab:
+lab finish network-ingress
+________________________________________
+19. Architecture Comparison Learned
+HTTP Route
+Client → Router → Pod
+(no encryption)
+________________________________________
+Edge Route
+Client → Router (TLS)
+Router → Pod (HTTP)
+________________________________________
+Passthrough Route
+Client → Router → Pod (TLS)
+End-to-end encryption.
+________________________________________
+20. Key Commands from This Lab (EX280 Important)
+Deploy application
+oc create -f deployment.yaml
+Expose service
+oc expose svc
+Create edge route
+oc create route edge
+Create passthrough route
+oc create route passthrough
+Create TLS secret
+oc create secret tls
+Debug pod
+oc debug
+
