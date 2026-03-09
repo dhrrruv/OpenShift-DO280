@@ -1,0 +1,298 @@
+1. What is an OpenShift Template
+Concept
+An OpenShift Template is a custom Kubernetes resource that contains multiple Kubernetes objects packaged together.
+It allows you to deploy a complete application with dependencies in one step.
+A template may create:
+•	Deployments / StatefulSets
+•	Services
+•	Secrets
+•	ConfigMaps
+•	Routes
+•	Persistent Volumes
+Instead of creating each resource manually, a template automatically creates all required resources.
+________________________________________
+Example Scenario
+Imagine deploying a web application that needs:
+•	database
+•	secret
+•	service
+•	deployment
+Without template:
+create secret
+create deployment
+create service
+create route
+With template:
+process template → deploy everything
+________________________________________
+2. Key Features of Templates
+1️⃣ Parameters
+Templates support parameters that allow customization during deployment.
+Example parameters:
+APP_NAME
+IMAGE
+DATABASE_USER
+DATABASE_PASSWORD
+These parameters allow the same template to be reused with different values.
+________________________________________
+2️⃣ Labels
+Templates can apply labels automatically to all resources.
+Example label:
+template=cache-service
+This helps with:
+•	grouping resources
+•	filtering resources
+•	monitoring
+________________________________________
+3️⃣ Object List
+A template defines a list of resources it creates.
+Example:
+Secret
+Service
+Service
+StatefulSet
+________________________________________
+3. Where Templates Are Stored
+Default templates are installed by the:
+Cluster Samples Operator
+They are stored in the:
+openshift namespace
+________________________________________
+List Available Templates
+Command:
+oc get templates -n openshift
+Example output:
+NAME                      DESCRIPTION
+cache-service             Red Hat Data Grid
+cakephp-mysql-example     Example PHP + MySQL app
+This shows:
+Column	Meaning
+NAME	template name
+DESCRIPTION	what it deploys
+PARAMETERS	number of parameters
+OBJECTS	number of resources created
+________________________________________
+4. Inspect a Template
+To understand what a template does:
+oc describe template cache-service -n openshift
+This shows:
+•	description
+•	parameters
+•	labels
+•	objects created
+Example information:
+Parameters:
+APPLICATION_NAME
+APPLICATION_PASSWORD
+________________________________________
+Generated Parameters
+Some parameters are auto-generated.
+Example:
+APPLICATION_PASSWORD
+Generated: expression
+From: [a-zA-Z0-9]{16}
+This means OpenShift generates a random 16 character password.
+________________________________________
+5. View Only Template Parameters
+Command:
+oc process --parameters cache-service -n openshift
+Output example:
+NAME                   VALUE
+APPLICATION_NAME       cache-service
+IMAGE                  registry.redhat.io/...
+NUMBER_OF_INSTANCES    1
+This shows parameters without displaying full template details.
+________________________________________
+6. View Template YAML
+You can see the full template definition.
+Command:
+oc get template cache-service -o yaml -n openshift
+Example structure:
+apiVersion: template.openshift.io/v1
+kind: Template
+
+parameters:
+- name: APPLICATION_NAME
+  value: cache-service
+
+objects:
+- kind: Secret
+- kind: Service
+- kind: StatefulSet
+Sections:
+Section	Meaning
+apiVersion	template API
+kind	Template
+parameters	configurable variables
+objects	resources created
+________________________________________
+7. Deploy an Application from Template
+To instantiate a template (create resources from it):
+Command
+oc new-app --template=cache-service -p APPLICATION_USER=my-user
+Explanation:
+Part	Meaning
+oc new-app	create new application
+--template	specify template
+-p	set parameter
+________________________________________
+Example:
+APPLICATION_USER=my-user
+Overrides default parameter value.
+________________________________________
+8. Production Method (Recommended)
+Instead of using oc new-app, production environments use:
+oc process + oc apply
+Why?
+Because this allows:
+•	version control
+•	change tracking
+•	automation
+________________________________________
+9. Process a Template
+oc process converts a template into normal Kubernetes resources.
+Example:
+oc process my-cache-service \
+-p APPLICATION_USER=user1 \
+-o yaml > manifest.yaml
+Explanation:
+Part	Meaning
+oc process	process template
+-p	parameter value
+-o yaml	output format
+>	save to file
+Result:
+manifest.yaml
+contains:
+Deployment
+Service
+Secret
+________________________________________
+10. Process Template From File
+If template is stored locally:
+oc process -f my-template.yaml -p USER=user1
+________________________________________
+11. Use a Parameters File
+Instead of writing many parameters in command line, use a parameter file.
+Example:
+my-cache-service-params.env
+File content:
+TOTAL_CONTAINER_MEM=1024
+APPLICATION_USER=cache-user
+APPLICATION_PASSWORD=my-secret-password
+Run:
+oc process my-cache-service \
+--param-file=my-cache-service-params.env \
+-o yaml
+Advantages:
+•	cleaner command
+•	easier automation
+•	version control
+________________________________________
+12. Deploy Processed Resources
+You can pipe the output directly to oc apply.
+Example:
+oc process my-cache-service \
+--param-file=params.env | oc apply -f -
+Explanation:
+Command	Purpose
+oc process	generate manifests
+	(pipe)
+oc apply	create/update resources
+-f - means read input from pipe.
+________________________________________
+13. Updating Applications
+Templates can be updated by:
+1️⃣ Changing parameter file
+2️⃣ Processing template again
+3️⃣ Applying changes
+Example:
+oc process my-cache-service \
+--param-file=params2.env | oc apply -f -
+________________________________________
+14. Preview Changes
+Before applying updates use:
+oc diff
+Example:
+oc process my-cache-service \
+--param-file=params2.env | oc diff -f -
+Example output:
+- memory: 1Gi
++ memory: 2Gi
+Meaning:
+Memory changed from 1Gi → 2Gi.
+________________________________________
+15. Managing Templates
+Best practice for production:
+Do NOT directly use templates from the openshift namespace.
+Instead:
+1️⃣ Copy template
+2️⃣ Modify parameters
+3️⃣ Store in your project
+________________________________________
+Copy Template
+oc get template cache-service \
+-o yaml -n openshift > my-cache-service.yaml
+________________________________________
+Recommended Changes
+Modify the template file:
+1️⃣ Change template name
+name: my-cache-service
+2️⃣ Change default parameters
+value: custom-value
+3️⃣ Remove namespace field
+namespace: openshift
+________________________________________
+16. Upload Template to Project
+Command:
+oc create -f my-cache-service.yaml
+This does NOT create resources.
+It only creates a template resource.
+________________________________________
+Upload to Another Namespace
+Example:
+oc create -f my-cache-service.yaml -n shared-templates
+________________________________________
+17. View Templates in Project
+oc get templates
+Example:
+NAME              PARAMETERS   OBJECTS
+my-cache-service  8            4
+________________________________________
+18. Template Deployment Workflow (Real Production)
+Typical workflow:
+1️⃣ Copy template
+oc get template cache-service -n openshift
+2️⃣ Customize template
+my-cache-service.yaml
+3️⃣ Upload template
+oc create -f my-cache-service.yaml
+4️⃣ Create parameters file
+params.env
+5️⃣ Deploy application
+oc process my-cache-service --param-file=params.env | oc apply -f -
+________________________________________
+19. Templates vs Helm Charts
+Feature	Templates	Helm
+Complex apps	Limited	Excellent
+Versioning	No	Yes
+Package manager	No	Yes
+Recommended for	simple apps	complex apps
+Because of this, Helm charts are more commonly used today.
+________________________________________
+Important Commands to Remember (EX280)
+List templates
+oc get templates -n openshift
+Describe template
+oc describe template TEMPLATE
+View parameters
+oc process --parameters TEMPLATE
+Process template
+oc process TEMPLATE
+Deploy template
+oc new-app --template=TEMPLATE
+Production deployment
+oc process TEMPLATE | oc apply -f -
+Preview changes
+oc diff -f
+
