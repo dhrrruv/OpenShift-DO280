@@ -1,0 +1,230 @@
+1. Imperative Commands
+Concept
+Imperative = You tell the cluster exactly what action to perform immediately.
+You specify all parameters in the command line, and OpenShift performs the action instantly.
+Think of it like:
+“Create a deployment with this image and this name right now.”
+Example Command
+oc create deployment myapp --image=nginx
+What happens
+•	oc → OpenShift CLI tool
+•	create deployment → command to create deployment
+•	myapp → deployment name
+•	--image=nginx → container image used
+OpenShift immediately creates the deployment.
+Other Imperative Examples
+Create service
+oc expose deployment myapp --port=80
+Scale deployment
+oc scale deployment myapp --replicas=3
+Delete resource
+oc delete pod podname
+Advantages
+✔ Quick
+✔ Good for testing
+✔ Easy for one-time tasks
+Disadvantages
+❌ Hard to track changes
+❌ Not good for automation or version control
+________________________________________
+2. Declarative Workflow
+Concept
+Declarative = You describe the desired state in a file (YAML/JSON).
+Instead of telling OpenShift how to do something, you describe what the final state should look like.
+Example:
+“There should be a deployment with 3 pods using nginx image.”
+OpenShift will create or modify resources until the cluster matches the file.
+________________________________________
+Example YAML Manifest
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: myapp
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: myapp
+  template:
+    metadata:
+      labels:
+        app: myapp
+    spec:
+      containers:
+      - name: nginx
+        image: nginx
+________________________________________
+Apply Manifest
+oc apply -f deployment.yaml
+What it does
+•	Creates deployment if not exists
+•	Updates deployment if changed
+________________________________________
+Why Declarative is Better for Production
+✔ Version control (Git)
+✔ Automation (CI/CD)
+✔ Reproducible infrastructure
+✔ Easy updates
+________________________________________
+3. --save-config Option
+This option saves the original configuration as an annotation in the resource.
+Example:
+oc create deployment myapp --image=nginx --save-config
+It adds annotation like:
+kubectl.kubernetes.io/last-applied-configuration
+Why important?
+oc apply uses this stored configuration to compare changes.
+Without it, updates may behave incorrectly.
+________________________________________
+4. oc diff Command
+Purpose
+Shows difference between cluster state and manifest file before applying changes.
+Example:
+oc diff -f deployment.yaml
+Output example:
+- replicas: 2
++ replicas: 3
+Meaning:
+Cluster has 2 replicas, manifest wants 3 replicas.
+________________________________________
+Why Useful
+✔ Prevents accidental changes
+✔ Good for CI/CD pipelines
+✔ Helps review configuration
+________________________________________
+5. Kustomize
+Concept
+Kustomize allows modifying Kubernetes/OpenShift manifests without editing the original files.
+Built directly into:
+oc apply
+So OpenShift automatically supports Kustomize.
+________________________________________
+Why Kustomize is Used
+Real environments usually have:
+•	dev
+•	test
+•	staging
+•	production
+Instead of copying YAML files multiple times, you use:
+•	base configuration
+•	overlays for environments
+________________________________________
+6. Kustomize Structure
+Typical project structure:
+project/
+ ├── base/
+ │   ├── deployment.yaml
+ │   ├── service.yaml
+ │   └── kustomization.yaml
+ │
+ └── overlays/
+     ├── dev/
+     │   └── kustomization.yaml
+     └── prod/
+         └── kustomization.yaml
+________________________________________
+7. Base Directory
+Base contains common configuration.
+Example:
+base/kustomization.yaml
+resources:
+- deployment.yaml
+- service.yaml
+Meaning:
+These resources are the base application configuration.
+________________________________________
+8. Overlay Directory
+Overlay modifies base configuration.
+Example:
+overlays/dev/kustomization.yaml
+resources:
+- ../../base
+
+replicas:
+- name: myapp
+  count: 1
+Example:
+overlays/prod/kustomization.yaml
+resources:
+- ../../base
+
+replicas:
+- name: myapp
+  count: 5
+________________________________________
+Apply overlay
+Dev environment
+oc apply -k overlays/dev
+Production environment
+oc apply -k overlays/prod
+________________________________________
+9. Patches in Kustomize
+Sometimes you only want to change one field.
+You can use patches.
+Example:
+patch.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: myapp
+spec:
+  replicas: 4
+Then in kustomization.yaml:
+patches:
+- patch.yaml
+This modifies only the replica count.
+________________________________________
+10. ConfigMap and Secret Generators
+Kustomize can automatically generate configuration objects.
+________________________________________
+ConfigMap Generator
+Example:
+configMapGenerator:
+- name: app-config
+  literals:
+  - ENV=dev
+  - DEBUG=true
+Apply:
+oc apply -k .
+Generated resource:
+ConfigMap/app-config
+________________________________________
+Secret Generator
+Example:
+secretGenerator:
+- name: db-secret
+  literals:
+  - password=redhat
+Creates:
+Secret/db-secret
+________________________________________
+11. oc Integration with Kustomize
+You don't need a separate command.
+Just run:
+oc apply -k directory/
+or
+oc create -k directory/
+OpenShift automatically processes the kustomization.yaml file.
+________________________________________
+Quick Comparison
+Feature	Imperative	Declarative
+Create resource	oc create	YAML + oc apply
+Update	manual command	modify YAML
+Automation	difficult	easy
+Best use	testing	production
+________________________________________
+Real Production Workflow (Common in OpenShift)
+1️⃣ Write base manifests
+2️⃣ Create overlays for environments
+3️⃣ Store in Git
+4️⃣ Use CI/CD pipeline
+5️⃣ Deploy with:
+oc apply -k overlays/prod
+________________________________________
+✅ Key exam point for EX280
+Remember:
+•	oc apply -f → deploy manifest
+•	oc apply -k → deploy Kustomize
+•	oc diff → preview changes
+•	configMapGenerator / secretGenerator → auto create configs
+
