@@ -1,0 +1,319 @@
+Lab: Configure Authentication and Authorization
+Configure the HTPasswd identity provider, create groups, and assign roles to users and groups.
+Outcomes
+Create users and passwords for HTPasswd authentication.
+Configure the identity provider for HTPasswd authentication.
+Assign cluster administration rights to users.
+Remove the ability to create projects at the cluster level.
+Create groups and add users to groups.
+Manage user privileges in projects by granting privileges to groups
+
+1. Core Concepts (Very Important)
+Authentication
+Authentication answers:
+Who are you?
+Examples:
+•	LDAP
+•	HTPasswd
+•	GitHub OAuth
+•	Google OAuth
+•	Keystone
+In this lab we use:
+HTPasswd Identity Provider
+This means usernames/passwords are stored in a file like:
+username:hashedpassword
+________________________________________
+Authorization (RBAC)
+Authorization answers:
+What are you allowed to do?
+OpenShift uses RBAC (Role-Based Access Control).
+Example:
+Role	Permission
+cluster-admin	full cluster control
+admin	project administration
+edit	modify resources
+view	read-only
+________________________________________
+2. Lab Architecture
+Users created:
+tester
+leader
+new_admin
+new_developer
+Groups created:
+managers
+developers
+qa
+Roles assigned:
+Group	Role
+managers	self-provisioner
+developers	edit
+qa	view
+________________________________________
+3. Step 1 — Start Lab Environment
+Command:
+lab start auth-review
+Purpose:
+•	prepares OpenShift cluster
+•	resets authentication configuration
+•	ensures API is reachable
+________________________________________
+4. Step 2 — Modify HTPasswd User File
+File location:
+~/DO280/labs/auth-review/tmp_users
+HTPasswd file format:
+username:hashedpassword
+Example:
+tester:$apr1$EyWSDib4$uLoUMpwohNWUrU5L5ogkB/
+Passwords are hashed, not plain text.
+________________________________________
+5. Remove Analyst User
+Command:
+htpasswd -D ~/DO280/labs/auth-review/tmp_users analyst
+Explanation:
+Option	Meaning
+-D	delete user
+htpasswd	manage htpasswd files
+Result:
+Deleting password for user analyst
+Now the analyst user is removed.
+________________________________________
+6. Update Passwords and Add Users
+Command:
+for NAME in tester leader new_admin new_developer ; \
+do \
+htpasswd -b ~/DO280/labs/auth-review/tmp_users ${NAME} 'L@bR3v!ew' ; \
+done
+Explanation:
+This loop updates multiple users.
+Part	Meaning
+for NAME in	iterate users
+htpasswd -b	batch mode
+tmp_users	htpasswd file
+password	L@bR3v!ew
+Results:
+Updating password for user tester
+Updating password for user leader
+Adding password for user new_admin
+Adding password for user new_developer
+________________________________________
+7. Verify File
+Command:
+cat ~/DO280/labs/auth-review/tmp_users
+Example output:
+tester:$apr1$...
+leader:$apr1$...
+new_admin:$apr1$...
+new_developer:$apr1$...
+Meaning:
+HTPasswd file ready
+________________________________________
+8. Login as Cluster Admin
+Command:
+oc login -u admin -p redhatocp https://api.ocp4.example.com:6443
+Explanation:
+Parameter	Meaning
+oc login	authenticate to cluster
+-u	username
+-p	password
+URL	API server
+________________________________________
+9. Create Secret for HTPasswd File
+Command:
+oc create secret generic auth-review \
+--from-file htpasswd=/home/student/DO280/labs/auth-review/tmp_users \
+-n openshift-config
+Explanation:
+Component	Meaning
+secret	Kubernetes secret
+auth-review	secret name
+--from-file	load file
+openshift-config	namespace used for cluster config
+Result:
+secret/auth-review created
+________________________________________
+10. Export OAuth Configuration
+Command:
+oc get oauth cluster -o yaml > ~/DO280/labs/auth-review/oauth.yaml
+Explanation:
+Option	Meaning
+get oauth cluster	cluster authentication config
+-o yaml	output YAML
+| redirect to file |
+________________________________________
+11. Add HTPasswd Identity Provider
+Edit file:
+~/DO280/labs/auth-review/oauth.yaml
+Add:
+- htpasswd:
+    fileData:
+      name: auth-review
+  mappingMethod: claim
+  name: htpasswd
+  type: HTPasswd
+Explanation:
+Field	Meaning
+fileData	secret name
+name	provider name
+type	authentication type
+mappingMethod	user mapping
+________________________________________
+12. Apply New Authentication Config
+Command:
+oc replace -f oauth.yaml
+Explanation:
+replace existing cluster authentication config
+Result:
+oauth.config.openshift.io/cluster replaced
+________________________________________
+13. Monitor Authentication Pods
+Command:
+watch oc get pods -n openshift-authentication
+Explanation:
+Part	Meaning
+watch	repeat command
+openshift-authentication	authentication namespace
+Pods restart because authentication config changed.
+Example:
+oauth-openshift-xxxxx Running
+________________________________________
+14. Assign Cluster Admin Role
+Command:
+oc adm policy add-cluster-role-to-user cluster-admin new_admin
+Explanation:
+Part	Meaning
+cluster-admin	highest privilege
+new_admin	target user
+Now:
+new_admin = cluster administrator
+________________________________________
+15. Login as new_admin
+oc login -u new_admin -p 'L@bR3v!ew'
+Test privileges:
+oc get nodes
+Works because cluster-admin can access cluster resources.
+Example:
+master01 Ready control-plane
+________________________________________
+16. Test Limited User
+Login as developer:
+oc login -u new_developer -p 'L@bR3v!ew'
+Try:
+oc get nodes
+Result:
+Forbidden
+Because developer does not have cluster role.
+________________________________________
+17. Disable Project Self Creation
+Command:
+oc adm policy remove-cluster-role-from-group \
+self-provisioner system:authenticated:oauth
+Explanation:
+Default:
+all users can create projects
+After command:
+only admins can create projects
+________________________________________
+18. Create Managers Group
+oc adm groups new managers
+Group created:
+managers
+________________________________________
+19. Add Leader to Managers
+oc adm groups add-users managers leader
+Structure:
+managers
+   └ leader
+________________________________________
+20. Allow Managers to Create Projects
+Command:
+oc adm policy add-cluster-role-to-group \
+self-provisioner managers
+Meaning:
+managers group can create projects
+________________________________________
+21. Leader Creates Project
+Login:
+oc login -u leader
+Create project:
+oc new-project auth-review
+Important rule:
+project creator automatically becomes project admin
+________________________________________
+22. Create Developers Group
+oc adm groups new developers
+Add user:
+oc adm groups add-users developers new_developer
+________________________________________
+23. Give Developers Edit Access
+oc policy add-role-to-group edit developers
+Edit role allows:
+create deployments
+update services
+delete resources
+________________________________________
+24. Create QA Group
+oc adm groups new qa
+Add tester:
+oc adm groups add-users qa tester
+________________________________________
+25. Give QA Read Access
+oc policy add-role-to-group view qa
+QA can:
+view pods
+view deployments
+view logs
+QA cannot:
+modify resources
+delete resources
+________________________________________
+26. Final RBAC Structure
+Cluster:
+cluster-admin
+   └ new_admin
+Project: auth-review
+leader → admin
+
+developers group
+    └ new_developer → edit role
+
+qa group
+    └ tester → view role
+________________________________________
+27. Key Commands for EX280 Exam
+Manage HTPasswd Users
+htpasswd -b file username password
+htpasswd -D file username
+________________________________________
+Create Secret
+oc create secret generic
+________________________________________
+Edit OAuth
+oc get oauth cluster -o yaml
+oc replace -f oauth.yaml
+________________________________________
+RBAC Commands
+Create group
+oc adm groups new group
+Add user
+oc adm groups add-users group user
+Assign role to group
+oc policy add-role-to-group role group
+Assign cluster role
+oc adm policy add-cluster-role-to-user role user
+________________________________________
+28. Real Production Architecture
+In real companies:
+Authentication
+    ├ LDAP
+    ├ HTPasswd
+    └ OAuth providers
+
+Authorization
+    ├ cluster-admin
+    ├ admin
+    ├ edit
+    └ view
+Users → Groups → Roles → Permissions.
+
+
