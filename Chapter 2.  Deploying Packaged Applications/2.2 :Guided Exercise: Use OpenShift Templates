@@ -1,0 +1,323 @@
+Guided Exercise: Use OpenShift Templates
+Deploy and update an application from a template that is stored in another project.
+You learn how to:
+1️⃣ Deploy an application from a template in another project
+2️⃣ Deploy an application from a custom template
+3️⃣ Update an application using template parameters
+________________________________________
+Step 1 — Start the Lab Environment
+Command:
+lab start packaged-templates
+What this does
+The lab command prepares the environment:
+•	Starts the cluster
+•	Creates required resources
+•	Configures permissions
+This ensures the exercise works correctly.
+________________________________________
+Step 2 — Login to OpenShift
+Command:
+oc login -u developer -p developer \
+https://api.ocp4.example.com:6443
+Explanation
+Part	Meaning
+oc	OpenShift CLI
+login	authenticate to cluster
+-u developer	username
+-p developer	password
+URL	API server address
+After login, you can manage resources in the cluster.
+________________________________________
+Step 3 — Discover Available Templates
+Templates are stored in the openshift namespace.
+Command:
+oc get templates -n openshift
+Example output:
+NAME                    DESCRIPTION
+cakephp-mysql-example   Example PHP app
+mysql-persistent        MySQL database template
+postgresql-ephemeral    PostgreSQL template
+What this means
+You are checking which templates are available in the cluster.
+The template we want:
+mysql-persistent
+This template deploys a persistent MySQL database.
+________________________________________
+Step 4 — Inspect the Template
+Command:
+oc describe template mysql-persistent -n openshift
+Purpose
+Shows:
+•	template description
+•	parameters
+•	objects created
+Example objects:
+Secret
+Service
+PersistentVolumeClaim
+Deployment
+Explanation
+Resource	Purpose
+Secret	store DB credentials
+Service	expose database inside cluster
+PVC	persistent storage
+Deployment	runs MySQL container
+So the template automatically deploys a complete database stack.
+________________________________________
+Step 5 — View Template Parameters
+Command:
+oc process --parameters mysql-persistent -n openshift
+Example output:
+MYSQL_USER
+MYSQL_PASSWORD
+MYSQL_DATABASE
+VOLUME_CAPACITY
+MYSQL_VERSION
+Important
+Some parameters are auto-generated.
+Example:
+MYSQL_PASSWORD  expression  [a-zA-Z0-9]{16}
+Meaning:
+OpenShift automatically generates a random password.
+________________________________________
+Step 6 — Create a New Project
+Command:
+oc new-project packaged-templates
+What this does
+Creates a namespace for your resources.
+OpenShift projects = Kubernetes namespaces.
+Now all resources will be created in:
+packaged-templates
+________________________________________
+Step 7 — Deploy MySQL Using Template
+Command:
+oc new-app --template=mysql-persistent \
+-p MYSQL_USER=user1 \
+-p MYSQL_PASSWORD=mypasswd
+Explanation
+Part	Meaning
+oc new-app	create application
+--template	use template
+-p	set parameter
+Parameters used:
+MYSQL_USER=user1
+MYSQL_PASSWORD=mypasswd
+OpenShift then creates:
+secret/mysql
+service/mysql
+persistentvolumeclaim/mysql
+deployment/mysql
+________________________________________
+Step 8 — Wait Until Pod Is Running
+Command:
+watch oc get pods
+Example output:
+NAME                     READY   STATUS
+mysql-xxxx               1/1     Running
+Explanation
+Column	Meaning
+READY	containers ready
+STATUS	running state
+1/1 Running means database is ready.
+Stop watch:
+Ctrl + C
+________________________________________
+Step 9 — Test Database Connection
+Command:
+oc run query-db -it --rm \
+--image registry.ocp4.example.com:8443/rhel8/mysql-80 \
+--restart Never --command -- \
+/bin/bash -c \
+"mysql -uuser1 -pmypasswd --protocol tcp \
+-h mysql -P3306 sampledb -e 'SHOW DATABASES;'"
+What this command does
+Creates a temporary pod that connects to MySQL.
+Options explanation:
+Option	Meaning
+oc run	create pod
+-it	interactive
+--rm	delete pod after execution
+--image	container image
+mysql command	execute database query
+________________________________________
+Query executed
+SHOW DATABASES;
+Output:
+information_schema
+performance_schema
+sampledb
+This confirms:
+✔ MySQL is working
+✔ Database is accessible
+________________________________________
+Step 10 — Deploy Custom Template
+Custom template file:
+roster-template.yaml
+Command:
+oc create -f roster-template.yaml
+What this does
+Creates a template resource in your project.
+Important:
+This does NOT deploy the app yet.
+It only uploads the template.
+________________________________________
+Step 11 — Verify Template Exists
+Command:
+oc get templates
+Output:
+NAME
+roster-template
+________________________________________
+Step 12 — Inspect Custom Template
+Command:
+oc describe template roster-template
+Objects created:
+Secret
+Deployment
+Service
+Route
+Explanation
+Resource	Purpose
+Secret	database credentials
+Deployment	application container
+Service	internal access
+Route	external access
+Routes are OpenShift-specific.
+They expose applications to the internet.
+________________________________________
+Step 13 — View Template Parameters
+Command:
+oc process --parameters roster-template
+Important parameters:
+IMAGE
+APPNAME
+MYSQL_USER
+MYSQL_PASSWORD
+MYSQL_DATABASE
+INIT_DB
+INIT_DB parameter
+True → initialize database
+False → reuse existing data
+________________________________________
+Step 14 — Deploy Application from Template
+Command:
+oc process roster-template \
+-p MYSQL_USER=user1 \
+-p MYSQL_PASSWORD=mypasswd \
+-p INIT_DB=true | oc apply -f -
+Explanation
+1️⃣ oc process generates manifests
+2️⃣ pipe | sends output to next command
+3️⃣ oc apply deploys resources
+Resources created:
+secret/mysql
+deployment/do280-roster
+service/do280-roster
+route/do280-roster
+________________________________________
+Step 15 — Verify Pods
+Command:
+oc get pods
+Example:
+do280-roster-xxxx    Running
+mysql-xxxx           Running
+Now:
+•	database running
+•	application running
+________________________________________
+Step 16 — Get Application URL
+Command:
+oc get routes
+Example output:
+do280-roster-packaged-templates.apps.ocp4.example.com
+Open in browser:
+http://do280-roster-packaged-templates.apps.ocp4.example.com
+You will see version 1 of the app.
+________________________________________
+Step 17 — Create Parameter File for Update
+Create file:
+roster-parameters.env
+Content:
+MYSQL_USER=user1
+MYSQL_PASSWORD=mypasswd
+IMAGE=registry.ocp4.example.com:8443/redhattraining/do280-roster:v2
+Why parameter files?
+Advantages:
+✔ easier updates
+✔ version control
+✔ cleaner commands
+________________________________________
+Step 18 — Preview Changes
+Command:
+oc process roster-template \
+--param-file=roster-parameters.env | oc diff -f -
+Example output:
+image: do280-roster:v1
+→ image: do280-roster:v2
+Also:
+INIT_DB true → False
+Meaning:
+Database will not be reinitialized.
+________________________________________
+Step 19 — Apply Update
+Command:
+oc process roster-template \
+--param-file=roster-parameters.env | oc apply -f -
+Output:
+deployment configured
+service unchanged
+route unchanged
+Only the deployment changes.
+________________________________________
+Step 20 — Wait for New Pod
+Command:
+watch oc get pods
+Example:
+do280-roster-newpod Running
+mysql Running
+The application pod restarts with new image.
+________________________________________
+Step 21 — Verify Update
+Refresh the web page.
+You will see:
+Version 2
+Important:
+✔ Database data still exists
+✔ Only application updated
+________________________________________
+Step 22 — Finish Lab
+Command:
+lab finish packaged-templates
+What it does
+•	deletes resources
+•	resets environment
+•	prepares next lab
+________________________________________
+Full Workflow Summary
+1. Login
+oc login
+2. View templates
+oc get templates -n openshift
+3. Deploy template
+oc new-app --template
+4. Verify pods
+oc get pods
+5. Process template
+oc process TEMPLATE
+6. Deploy resources
+oc apply -f -
+7. Update app
+oc process --param-file | oc apply -f -
+________________________________________
+Important Exam Tips (EX280)
+Remember these commands:
+oc get templates
+oc describe template
+oc process --parameters
+oc new-app --template
+oc process | oc apply
+oc diff
+
+
+
+
