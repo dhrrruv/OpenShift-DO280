@@ -1,0 +1,344 @@
+Guided Exercise: Kustomize Overlays
+Deploy and update an application by applying different Kustomize overlays that are stored in a Git server.
+Outcomes
+Deploy an application by using Kustomize from provided files.
+Apply an application update that changes a deployment.
+Deploy an overlay of the application that increases the number of replicas.
+As the student user on the workstation machine, use the lab command to prepare your system for this exercise.
+1️⃣ Start the Lab Environment
+Command
+lab start declarative-kustomize
+What this does
+The lab utility prepares the training environment:
+•	Starts the OpenShift lab environment
+•	Verifies API connectivity to the cluster
+•	Ensures required resources are available
+This command ensures the cluster API is reachable before starting the exercise.
+________________________________________
+2️⃣ Clone the Git Repository
+Command
+git clone https://git.ocp4.example.com/developer/declarative-kustomize.git --branch v1.1.0
+Explanation
+Part	Meaning
+git clone	downloads repository
+URL	location of application code
+--branch v1.1.0	clone specific version
+This repository uses Git branches as application versions.
+Example:
+Branch	Version
+v1.1.0	first version
+v1.1.1	image update
+v1.1.2	secret update
+v1.1.3	production overlay
+________________________________________
+3️⃣ Examine Repository Structure
+Command
+tree
+Output structure
+base
+ ├ database
+ │   ├ configmap.yaml
+ │   ├ deployment.yaml
+ │   ├ service.yaml
+ │   └ kustomization.yaml
+ │
+ ├ exoplanets
+ │   ├ deployment.yaml
+ │   ├ service.yaml
+ │   ├ route.yaml
+ │   └ kustomization.yaml
+ │
+ └ kustomization.yaml
+Explanation
+This repository uses Kustomize base configuration.
+Two components exist:
+Component	Purpose
+database	PostgreSQL database
+exoplanets	web application
+The root kustomization.yaml combines both.
+________________________________________
+4️⃣ Examine Base Kustomization
+File
+base/kustomization.yaml
+Example:
+kind: Kustomization
+resources:
+- database
+- exoplanets
+
+secretGenerator:
+- name: db-secrets
+  literals:
+    - DB_ADMIN_PASSWORD=postgres
+    - DB_NAME=database
+    - DB_PASSWORD=password
+    - DB_USER=user
+
+configMapGenerator:
+- name: db-config
+  literals:
+    - DB_HOST=database
+    - DB_PORT=5432
+________________________________________
+5️⃣ Understanding Each Section
+resources
+resources:
+- database
+- exoplanets
+This tells Kustomize to include:
+base/database
+base/exoplanets
+Each contains Kubernetes YAML manifests.
+________________________________________
+secretGenerator
+secretGenerator:
+- name: db-secrets
+Creates a Kubernetes Secret automatically.
+Stored values:
+DB_ADMIN_PASSWORD
+DB_NAME
+DB_PASSWORD
+DB_USER
+This secret is used by the database deployment.
+________________________________________
+configMapGenerator
+configMapGenerator:
+- name: db-config
+Creates a ConfigMap with:
+DB_HOST
+DB_PORT
+Used by the exoplanets application.
+________________________________________
+Important Behavior: Hash Suffix
+Kustomize adds a hash to generated resources.
+Example:
+db-config-2d7thbcgkc
+db-secrets-55cbgc8c6m
+Why?
+If values change → hash changes → pods redeploy.
+This ensures configuration updates trigger rolling updates automatically.
+________________________________________
+6️⃣ Login to OpenShift
+Command
+oc login -u developer -p developer https://api.ocp4.example.com:6443
+Explanation:
+Parameter	Meaning
+oc	OpenShift CLI
+login	authenticate
+-u developer	username
+-p developer	password
+API URL	cluster endpoint
+________________________________________
+7️⃣ Create a Project
+Command
+oc new-project declarative-kustomize
+Explanation:
+Creates a namespace for application resources.
+Namespace:
+declarative-kustomize
+________________________________________
+8️⃣ Deploy Application Using Kustomize
+Command
+oc apply -k base
+Explanation:
+Option	Meaning
+apply	create/update resources
+-k	apply Kustomize directory
+Kustomize:
+1.	Reads kustomization.yaml
+2.	Generates secrets/configmaps
+3.	Combines resources
+4.	Applies them to the cluster
+________________________________________
+Resources Created
+configmap/database
+configmap/db-config-xxxxx
+secret/db-secrets-xxxxx
+service/database
+service/exoplanets
+deployment/database
+deployment/exoplanets
+route/exoplanets
+________________________________________
+Route (OpenShift Feature)
+route/exoplanets
+A Route exposes the application externally.
+URL:
+http://exoplanets-declarative-kustomize.apps.ocp4.example.com
+________________________________________
+9️⃣ Monitor Deployment
+Command
+watch oc get all
+Explanation:
+Part	Meaning
+watch	runs command repeatedly
+oc get all	show all Kubernetes resources
+Output includes:
+•	Pods
+•	Services
+•	Deployments
+•	ReplicaSets
+•	Routes
+________________________________________
+Example Pod Output
+pod/database-xxxxx
+pod/exoplanets-xxxxx
+Both must reach:
+STATUS = Running
+READY = 1/1
+________________________________________
+🔟 Upgrade Application (v1.1.1)
+Switch branch
+git checkout v1.1.1
+Show change
+git show
+Output:
+image: exoplanets:v1.1.0
+→
+image: exoplanets:v1.1.1
+Meaning:
+Application container image updated.
+________________________________________
+Redeploy Application
+Command:
+oc apply -k base
+OpenShift performs:
+Rolling update
+Steps:
+1.	create new ReplicaSet
+2.	start new pods
+3.	terminate old pods
+________________________________________
+1️⃣1️⃣ Update Database Password (v1.1.2)
+Switch branch:
+git checkout v1.1.2
+Change:
+DB_PASSWORD=password
+→
+DB_PASSWORD=newpassword
+This modifies secretGenerator.
+________________________________________
+Check Existing Secrets
+Command
+oc get secret
+Example:
+db-secrets-55cbgc8c6m
+________________________________________
+Extract Secret Contents
+Command
+oc extract secret/db-secrets-55cbgc8c6m --to=-
+Explanation:
+Option	Meaning
+extract	retrieve secret data
+--to=-	output to terminal
+________________________________________
+Deploy Updated Secret
+Command
+oc apply -k base
+Kustomize detects change.
+Result:
+new secret created
+db-secrets-6h668tk789
+Then deployments update automatically.
+________________________________________
+Verify Deployment Uses New Secret
+Command
+oc get deployment exoplanets -o jsonpath='{.spec.template.spec.containers[0].envFrom}'
+Shows:
+configMapRef
+secretRef
+________________________________________
+Extract New Secret
+oc extract secret/db-secrets-6h668tk789 --to=-
+Output:
+DB_PASSWORD=newpassword
+________________________________________
+1️⃣2️⃣ Production Overlay (v1.1.3)
+Switch branch:
+git checkout v1.1.3
+New directory appears:
+overlays/production
+________________________________________
+Overlay Structure
+overlays/production
+ ├ kustomization.yaml
+ └ patch-replicas.yaml
+________________________________________
+Overlay kustomization.yaml
+kind: Kustomization
+resources:
+- ../../base/
+
+patches:
+- path: patch-replicas.yaml
+  target:
+    kind: Deployment
+    name: exoplanets
+Meaning:
+Use base resources but apply a patch.
+________________________________________
+Patch File
+patch-replicas.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: exoplanets
+spec:
+  replicas: 2
+Effect:
+replicas: 1
+→
+replicas: 2
+________________________________________
+Deploy Production Overlay
+Command
+oc apply -k overlays/production
+Now OpenShift updates deployment.
+________________________________________
+Check Replicas
+Command
+oc get deployment
+Output
+deployment/exoplanets 2/2
+Two pods running.
+________________________________________
+Example Pods
+pod/exoplanets-957bb5b48-5xl2d
+pod/exoplanets-957bb5b48-mgbrx
+This improves:
+•	scalability
+•	high availability
+•	load balancing
+________________________________________
+Delete Application
+Command
+oc delete -k base
+Deletes all resources defined by Kustomize.
+________________________________________
+Clean Lab Environment
+Command
+lab finish declarative-kustomize
+Purpose:
+•	cleanup resources
+•	reset environment for next exercise
+________________________________________
+Key Concepts Learned
+Concept	Explanation
+Base	common manifests
+Overlay	environment-specific modifications
+secretGenerator	generate secrets
+configMapGenerator	generate configmaps
+patches	modify resources
+oc apply -k	deploy Kustomize resources
+________________________________________
+Typical Production Workflow
+Git repository
+       ↓
+Kustomize base
+       ↓
+Environment overlays
+       ↓
+CI/CD pipeline
+       ↓
+OpenShift deployment
+
