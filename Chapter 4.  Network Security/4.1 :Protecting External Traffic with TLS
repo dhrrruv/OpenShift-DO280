@@ -1,0 +1,283 @@
+1. Goal of Network Security in OpenShift
+The main goal is:
+Protect network traffic between applications inside and outside the cluster
+Two main concerns:
+1️⃣ External traffic security
+Users accessing apps from internet.
+2️⃣ Internal traffic security
+Pods communicating inside the cluster.
+Example architecture:
+User (Internet)
+      │
+      ▼
+Router / Ingress
+      │
+      ▼
+Service
+      │
+      ▼
+Pods
+TLS ensures:
+Encrypted communication
+Authentication
+Data integrity
+________________________________________
+2. Accessing Applications from External Networks
+Applications running inside OpenShift are normally private.
+To expose them externally we use:
+Method	Description
+NodePort	exposes service on node port
+LoadBalancer	cloud load balancer
+Ingress	Kubernetes ingress resource
+Route	OpenShift native external access
+Most common in OpenShift:
+Route
+________________________________________
+3. What is an OpenShift Route?
+A Route exposes an application to external users using a public hostname.
+Example:
+https://api.apps.example.com
+Route components:
+Client
+   │
+   ▼
+Router
+   │
+   ▼
+Service
+   │
+   ▼
+Pods
+Command to create route:
+oc expose service myapp
+Example:
+oc expose service httpd
+Result:
+http://httpd-myproject.apps.cluster.com
+________________________________________
+4. Role of the Router
+OpenShift uses a router (HAProxy) managed by the Ingress Operator.
+Router responsibilities:
+Accept external requests
+Match hostname
+Forward traffic to correct service
+Router typically runs in namespace:
+openshift-ingress
+Check router pods:
+oc get pods -n openshift-ingress
+________________________________________
+5. Unencrypted Routes
+Basic route example:
+HTTP
+Command:
+oc expose service httpd
+Traffic flow:
+Client ---- HTTP ---- Router ---- HTTP ---- Pod
+Problem:
+traffic not encrypted
+This is not secure for production.
+________________________________________
+6. TLS Encryption
+TLS = Transport Layer Security
+TLS provides:
+Feature	Description
+Encryption	protects data
+Authentication	verifies identity
+Integrity	prevents tampering
+Example:
+HTTPS
+Instead of:
+http://app.example.com
+We use:
+https://app.example.com
+________________________________________
+7. TLS Termination Types in OpenShift Routes
+OpenShift supports 3 TLS termination modes.
+Mode	Encryption Location
+Edge	Router only
+Passthrough	Application
+Re-encrypt	Router + Application
+________________________________________
+8. Edge Termination
+Edge termination means:
+TLS terminates at the router
+Architecture:
+Client --- HTTPS ---> Router --- HTTP ---> Pod
+Encryption path:
+Client → Router = encrypted
+Router → Pod = NOT encrypted
+Advantages:
+Simple
+Router manages certificate
+Most commonly used
+Disadvantage:
+internal traffic unencrypted
+________________________________________
+Creating Edge Route
+Command:
+oc create route edge \
+--service api-frontend \
+--hostname api.apps.acme.com \
+--key api.key \
+--cert api.crt
+Explanation:
+Option	Meaning
+route edge	create edge TLS route
+--service	backend service
+--hostname	public hostname
+--key	TLS private key
+--cert	TLS certificate
+________________________________________
+Example Flow
+Browser
+   │ HTTPS
+   ▼
+Router
+   │ HTTP
+   ▼
+Service
+   ▼
+Pod
+________________________________________
+9. Default Router Certificates
+If you do not provide certificates, OpenShift uses internal certificate authority (CA).
+Command to check:
+oc get secret router-ca \
+-n openshift-ingress-operator -o yaml
+These certificates are self-signed.
+Browsers might show warning:
+Not trusted certificate
+________________________________________
+10. Passthrough Termination
+Passthrough means:
+Router does NOT terminate TLS
+Architecture:
+Client --- HTTPS ---> Router --- HTTPS ---> Pod
+Encryption path:
+Client → Pod = fully encrypted
+Router only passes traffic.
+Advantages:
+End-to-end encryption
+Application controls TLS
+Supports mutual TLS
+Disadvantages:
+Router cannot inspect traffic
+More complex configuration
+________________________________________
+Requirements
+Application must provide:
+TLS certificate
+TLS private key
+HTTPS server
+These certificates are usually stored in:
+OpenShift Secrets
+________________________________________
+TLS Secret Example
+Create secret:
+oc create secret tls mycert \
+--cert=tls.crt \
+--key=tls.key
+Mount secret inside pod:
+/etc/tls/
+Application then loads certificate.
+________________________________________
+11. Re-encrypt Termination
+Re-encrypt provides full encryption across the entire path.
+Architecture:
+Client --- HTTPS ---> Router --- HTTPS ---> Pod
+But router:
+terminates TLS
+then re-encrypts it
+So two TLS sessions exist.
+Client → Router
+Router → Pod
+Certificates:
+Connection	Certificate
+Client → Router	external certificate
+Router → Pod	internal service certificate
+________________________________________
+Example Flow
+Browser
+   │ HTTPS (cert: myapp.com)
+   ▼
+Router
+   │ HTTPS (cert: service.namespace.svc)
+   ▼
+Service
+   ▼
+Pod
+________________________________________
+12. Service Certificates (service-ca)
+OpenShift includes service-ca controller.
+Purpose:
+Automatically generate TLS certificates for services
+Example internal hostname:
+my-app.namespace.svc.cluster.local
+Service CA generates:
+certificate
+private key
+secret
+Pod mounts secret and uses certificate.
+________________________________________
+13. Comparing TLS Termination Types
+Feature	Edge	Passthrough	Re-encrypt
+Router terminates TLS	Yes	No	Yes
+App handles TLS	No	Yes	Yes
+End-to-end encryption	No	Yes	Yes
+Complexity	Low	Medium	High
+Common usage	Most common	Special cases	Secure production
+________________________________________
+14. Example Route Commands
+Create simple route:
+oc expose service myapp
+Create edge route:
+oc create route edge --service=myapp
+Create passthrough route:
+oc create route passthrough --service=myapp
+Create reencrypt route:
+oc create route reencrypt --service=myapp
+________________________________________
+15. View Routes
+List routes:
+oc get routes
+Example output:
+NAME     HOST/PORT                PATH
+httpd    httpd.apps.cluster.com
+Describe route:
+oc describe route httpd
+________________________________________
+16. Real Production Architecture
+Typical enterprise architecture:
+Internet
+    │
+    ▼
+Load Balancer
+    │
+    ▼
+OpenShift Router
+    │
+    ▼
+Service
+    │
+    ▼
+Pods
+Security layers:
+TLS encryption
+Network policies
+Service certificates
+RBAC
+________________________________________
+17. Important Exam Concepts (DO280 / EX280)
+You must understand:
+Routes expose applications
+TLS protects external traffic
+3 TLS termination types exist
+Edge termination most common
+Passthrough uses app certificates
+Re-encrypt provides full encryption
+Important commands:
+oc expose service
+oc create route edge
+oc get routes
+oc describe route
+
