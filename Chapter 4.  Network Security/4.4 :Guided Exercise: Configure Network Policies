@@ -1,0 +1,377 @@
+Guided Exercise: Configure Network Policies
+Goal of This Exercise
+Main objectives:
+1️⃣ Create NetworkPolicies
+2️⃣ Restrict communication between pods
+3️⃣ Allow only specific traffic
+You will see the progression:
+Step 1: Everything allowed
+Step 2: Deny all traffic
+Step 3: Allow specific traffic
+Step 4: Allow router traffic
+________________________________________
+2. Start the Lab
+Command:
+lab start network-policy
+Purpose:
+•	Prepares environment
+•	Downloads YAML files
+•	Configures OpenShift cluster
+________________________________________
+3. Login to OpenShift
+Command:
+oc login -u developer -p developer \
+https://api.ocp4.example.com:6443
+Explanation:
+Option	Meaning
+-u	username
+-p	password
+URL	OpenShift API server
+________________________________________
+4. Create Project
+Command:
+oc new-project network-policy
+Purpose:
+Creates namespace:
+network-policy
+Namespace = logical isolation in Kubernetes
+________________________________________
+5. Create Two Deployments
+We create two identical applications:
+hello
+test
+Both use nginx container.
+________________________________________
+Create hello deployment
+Command:
+oc new-app --name hello \
+--image registry.ocp4.example.com:8443/redhattraining/hello-world-nginx:v1.0
+Explanation:
+Option	Meaning
+new-app	create application
+--name	deployment name
+--image	container image
+Resources created:
+ImageStream
+Deployment
+Service
+Architecture:
+Deployment
+   ↓
+Pod
+   ↓
+Service
+________________________________________
+Create test deployment
+Command:
+oc new-app --name test \
+--image registry.ocp4.example.com:8443/redhattraining/hello-world-nginx:v1.0
+Now project contains:
+hello deployment
+test deployment
+________________________________________
+6. Expose hello Application
+Command:
+oc expose service hello
+Purpose:
+Creates route
+Architecture:
+Internet
+   ↓
+Router
+   ↓
+Service hello
+   ↓
+Pod hello
+________________________________________
+7. Verify Communication Between Pods
+Script:
+~/DO280/labs/network-policy/display-project-info.sh
+Shows:
+hello pod IP
+test pod IP
+service IP
+route hostname
+Example:
+hello pod 10.8.0.13
+test pod 10.8.0.14
+________________________________________
+8. Test Pod → Pod Communication
+Command:
+oc rsh test-pod curl 10.8.0.13:8080
+Example:
+oc rsh test-c4d74c9d5-5pq9s \
+curl 10.8.0.13:8080 | grep Hello
+Explanation:
+Command	Meaning
+oc rsh	remote shell into pod
+curl	HTTP request
+Result:
+Hello world
+Meaning:
+test pod → hello pod allowed
+________________________________________
+9. Test Service Access
+Command:
+oc rsh test-pod curl serviceIP:8080
+Example:
+curl 172.30.137.226:8080
+Result:
+Hello world
+Meaning:
+pod → service allowed
+________________________________________
+10. Test Route Access
+Command:
+curl hello-network-policy.apps.ocp4.example.com
+Result:
+Hello world
+Meaning:
+external → application works
+________________________________________
+11. Create Another Namespace
+Command:
+oc new-project different-namespace
+Purpose:
+Simulate another team / application
+________________________________________
+12. Create Sample Application
+Command:
+oc new-app --name sample-app \
+--image registry.ocp4.example.com:8443/redhattraining/hello-world-nginx:v1.0
+Architecture now:
+network-policy namespace
+   ├── hello pod
+   └── test pod
+
+different-namespace
+   └── sample-app pod
+________________________________________
+13. Test Cross Namespace Communication
+Command:
+oc rsh sample-app curl hello-pod-IP
+Example:
+oc rsh sample-app-d5f945-spx9q \
+curl 10.8.0.13:8080
+Result:
+Hello world
+Meaning:
+different namespace → allowed
+________________________________________
+14. Create Deny-All Network Policy
+Now we start security.
+Switch project:
+oc project network-policy
+________________________________________
+Edit file:
+deny-all.yaml
+Policy:
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: deny-all
+spec:
+  podSelector: {}
+________________________________________
+Explanation
+Field	Meaning
+podSelector {}	select ALL pods
+no ingress rules	deny incoming traffic
+Effect:
+Block all incoming traffic
+________________________________________
+Create policy:
+oc create -f deny-all.yaml
+Check:
+oc get networkpolicy
+Output:
+deny-all
+________________________________________
+15. Verify Traffic is Blocked
+Test:
+oc rsh test-pod curl hello-pod
+Result:
+No response
+Meaning:
+Traffic blocked
+________________________________________
+Test cross namespace:
+oc rsh sample-app curl test-pod
+Result:
+Timeout
+Meaning:
+network-policy working
+________________________________________
+16. Create Allow-Specific Policy
+Goal:
+Allow:
+sample-app → hello pod
+Only:
+port 8080
+________________________________________
+File:
+allow-specific.yaml
+Policy:
+spec:
+  podSelector:
+    matchLabels:
+      deployment: hello
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          network: different-namespace
+      podSelector:
+        matchLabels:
+          deployment: sample-app
+    ports:
+    - port: 8080
+      protocol: TCP
+________________________________________
+17. Policy Explanation
+Select Target Pods
+podSelector
+deployment: hello
+Meaning:
+Policy applies only to hello pods
+________________________________________
+Define Allowed Source
+from:
+________________________________________
+Namespace Selector
+namespaceSelector:
+  matchLabels:
+    network: different-namespace
+Meaning:
+allow traffic from namespace
+________________________________________
+Pod Selector
+deployment: sample-app
+Meaning:
+only sample-app pod
+________________________________________
+Port Restriction
+ports:
+- port: 8080
+Meaning:
+only port 8080 allowed
+________________________________________
+18. Apply the Policy
+Command:
+oc create -n network-policy -f allow-specific.yaml
+Check policies:
+oc get networkpolicies
+Example:
+deny-all
+allow-specific
+________________________________________
+19. Label the Namespace
+Important step.
+Policy references namespace label.
+Login as admin:
+oc login -u admin -p redhatocp
+Add label:
+oc label namespace different-namespace \
+network=different-namespace
+Meaning:
+Add namespace label
+Verify:
+oc describe namespace different-namespace
+Output:
+network=different-namespace
+________________________________________
+20. Test Allowed Traffic
+Switch namespace:
+oc project different-namespace
+Test:
+oc rsh sample-app curl hello-pod:8080
+Result:
+Hello world
+Meaning:
+Policy works
+________________________________________
+21. Test Blocked Ports
+Command:
+curl hello-pod:8181
+Result:
+timeout
+Meaning:
+port not allowed
+________________________________________
+22. Test Access to Test Pod
+Command:
+curl test-pod:8080
+Result:
+timeout
+Meaning:
+only hello pod allowed
+________________________________________
+23. Router Access
+Routes require router pods.
+Router namespace:
+openshift-ingress
+Policy file:
+allow-from-openshift-ingress.yaml
+Example:
+spec:
+  podSelector:
+    matchLabels:
+      deployment: hello
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          policy-group.network.openshift.io/ingress: ""
+Meaning:
+Allow router pods
+________________________________________
+Apply:
+oc create -n network-policy -f allow-from-openshift-ingress.yaml
+________________________________________
+Check policies:
+oc get networkpolicies
+Example:
+deny-all
+allow-specific
+allow-from-openshift-ingress
+________________________________________
+24. Test Route Again
+Command:
+curl hello-network-policy.apps.ocp4.example.com
+Result:
+Hello world
+Application works.
+________________________________________
+25. Important Lab Note (Single Node Cluster)
+Lab uses:
+single-node cluster
+Router pods use:
+host networking
+Therefore:
+network policy may not block router traffic
+But in real multi-node clusters it will.
+________________________________________
+26. Final Architecture
+After policies:
+sample-app → hello pod (8080) ✔
+sample-app → hello pod (other ports) ✖
+sample-app → test pod ✖
+test → hello ✖
+external → hello route ✔
+________________________________________
+27. Clean Up
+Finish lab:
+lab finish network-policy
+________________________________________
+28. Important Commands for EX280
+Create policy
+oc create -f policy.yaml
+List policies
+oc get networkpolicies
+Describe policy
+oc describe networkpolicy
+Label namespace
+oc label namespace dev network=dev
+Remote shell
+oc rsh pod-name
+
