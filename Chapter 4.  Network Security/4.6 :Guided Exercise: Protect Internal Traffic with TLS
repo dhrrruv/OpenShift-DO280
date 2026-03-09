@@ -1,0 +1,307 @@
+Guided Exercise: Protect Internal Traffic with TLS
+Goal of This Exercise (Concept)
+In Kubernetes/OpenShift, applications inside the cluster communicate through Services.
+By default this traffic can be unencrypted (HTTP).
+For security, we want:
+•	Encrypted communication (HTTPS)
+•	TLS certificates automatically managed by OpenShift
+•	Pods trust the OpenShift certificate authority
+This exercise shows how to:
+1.	Generate TLS certificates automatically
+2.	Mount certificates into the server pod
+3.	Inject CA bundle into client pod
+4.	Enable secure HTTPS communication inside cluster
+________________________________________
+2. Architecture of This Exercise
+Two applications exist:
+Client Pod  --->  Server Service  --->  Server Pod (NGINX)
+       HTTPS request
+Components used:
+Component	Purpose
+server deployment	NGINX HTTPS server
+server service	exposes server pod
+service-ca controller	generates TLS certificates
+secret	stores TLS certificate
+configmap	stores CA certificate
+client pod	connects securely
+________________________________________
+3. Step 1 — Prepare the Lab Environment
+lab start network-svccerts
+What it does
+This command:
+•	prepares the OpenShift lab environment
+•	creates project:
+network-svccerts
+•	creates resources:
+Resource	Purpose
+server deployment	nginx HTTPS server
+server service	exposes server
+no-ca-bundle pod	test client without CA
+________________________________________
+4. Step 2 — Login to OpenShift
+oc login -u admin -p redhatocp https://api.ocp4.example.com:6443
+Explanation
+Part	Meaning
+oc	OpenShift CLI
+login	authenticate to cluster
+-u admin	username
+-p redhatocp	password
+URL	OpenShift API server
+After login you can manage cluster resources.
+________________________________________
+5. Switch to Project
+oc project network-svccerts
+What this does
+Sets the active namespace/project.
+Equivalent Kubernetes concept:
+namespace
+All commands will now affect:
+network-svccerts
+________________________________________
+6. Step 3 — Generate TLS Certificate Automatically
+OpenShift has a Service CA Controller.
+It can automatically create certificates for services.
+We enable it using annotation.
+________________________________________
+Command
+oc annotate service server \
+service.beta.openshift.io/serving-cert-secret-name=server-secret
+Explanation
+Part	Meaning
+oc annotate	add annotation to resource
+service server	modify server service
+annotation	request TLS certificate
+Annotation:
+service.beta.openshift.io/serving-cert-secret-name=server-secret
+This tells OpenShift:
+Generate TLS certificate for this service and store it in secret server-secret.
+________________________________________
+7. What OpenShift Automatically Does
+The service-ca controller:
+1.	Creates TLS key
+2.	Signs certificate with cluster CA
+3.	Creates secret
+server-secret
+Secret contains:
+tls.crt  -> certificate
+tls.key  -> private key
+________________________________________
+8. Verify the Service
+oc describe service server
+Look for:
+Annotations:
+service.beta.openshift.io/serving-cert-secret-name: server-secret
+Also:
+service.beta.openshift.io/serving-cert-signed-by
+This shows the certificate signer.
+________________________________________
+9. Verify the Secret
+oc describe secret server-secret
+Output:
+Type: kubernetes.io/tls
+Data:
+tls.key
+tls.crt
+Meaning:
+File	Purpose
+tls.crt	server certificate
+tls.key	private key
+________________________________________
+10. Step 4 — Mount Secret Into Server Pod
+The NGINX server expects certificates at:
+/etc/pki/nginx/
+So we mount the secret as a volume.
+________________________________________
+Patch File
+spec:
+  template:
+    spec:
+      containers:
+        - name: server
+          volumeMounts:
+            - name: server-secret
+              mountPath: /etc/pki/nginx/
+      volumes:
+        - name: server-secret
+          secret:
+            secretName: server-secret
+________________________________________
+Explanation
+volumeMounts
+Mounts volume inside container.
+mountPath: /etc/pki/nginx/
+Meaning certificates appear in that directory.
+________________________________________
+volumes
+Defines volume source.
+secret:
+  secretName: server-secret
+Meaning:
+Use secret as filesystem volume.
+________________________________________
+Mapping Files
+tls.crt -> server.crt
+tls.key -> private/server.key
+Used by NGINX for HTTPS.
+________________________________________
+11. Apply Patch
+oc patch deployment server \
+--patch-file ~/DO280/labs/network-svccerts/server-secret.yaml
+Explanation
+Option	Meaning
+oc patch	modify existing resource
+deployment server	modify server deployment
+--patch-file	patch configuration
+Result:
+Deployment updated.
+New pod starts.
+________________________________________
+12. Verify Pod
+oc get pods
+Example:
+server-d7858d968-kgj77
+Status:
+Running
+Meaning the new pod started successfully.
+________________________________________
+13. Step 5 — Test Without CA Bundle
+We test TLS from the no-ca-bundle pod.
+Command:
+oc exec no-ca-bundle -- \
+openssl s_client -connect server.network-svccerts.svc:443
+Explanation
+Part	Meaning
+oc exec	run command in pod
+no-ca-bundle	pod name
+openssl s_client	test TLS connection
+connect	service address
+Service DNS format:
+service.namespace.svc
+Here:
+server.network-svccerts.svc
+________________________________________
+Result
+Error:
+self signed certificate in certificate chain
+Why?
+Because:
+Client does not trust the cluster CA.
+________________________________________
+14. Step 6 — Inject OpenShift CA Bundle
+OpenShift provides a way to automatically inject the cluster CA.
+We use ConfigMap annotation.
+________________________________________
+Create ConfigMap
+oc create configmap ca-bundle
+Creates empty configmap.
+________________________________________
+Annotate It
+oc annotate configmap ca-bundle \
+service.beta.openshift.io/inject-cabundle=true
+This tells OpenShift:
+Inject cluster CA certificate into this ConfigMap.
+________________________________________
+15. Verify ConfigMap
+oc get configmap ca-bundle -o yaml
+You will see:
+data:
+  service-ca.crt:
+This is the OpenShift service CA certificate.
+________________________________________
+16. Step 7 — Mount CA Bundle in Client Pod
+Client must trust server certificate.
+So we mount CA bundle.
+________________________________________
+Client YAML Key Section
+volumeMounts:
+- mountPath: /etc/pki/ca-trust/extracted/pem
+  name: trusted-ca
+Meaning:
+Mount CA certificates into container trust store.
+________________________________________
+Define Volume
+volumes:
+- configMap:
+    name: ca-bundle
+    items:
+    - key: service-ca.crt
+      path: tls-ca-bundle.pem
+  name: trusted-ca
+Meaning:
+Use configmap as volume.
+________________________________________
+17. Deploy Client
+oc apply -f client.yaml
+Explanation
+Part	Meaning
+oc apply	declarative deployment
+-f	file
+Creates:
+client deployment
+________________________________________
+18. Test HTTPS Communication
+Run inside client pod:
+oc exec deploy/client -- \
+curl -s https://server.network-svccerts.svc
+Output:
+Hello, world from nginx!
+Meaning:
+HTTPS connection successful.
+________________________________________
+19. Verify Certificate Again
+oc exec deploy/client -- \
+openssl s_client -connect server.network-svccerts.svc:443
+Now result:
+verify return:1
+Meaning:
+Certificate successfully verified.
+Client trusts the CA.
+________________________________________
+20. Clean Up Lab
+lab finish network-svccerts
+This removes resources and resets environment.
+________________________________________
+21. Full Security Flow
+Final architecture:
+Service CA Controller
+        │
+        ▼
+Generates TLS cert
+        │
+        ▼
+Secret (server-secret)
+        │
+        ▼
+Mounted into Server Pod
+        │
+        ▼
+Server provides HTTPS
+        │
+        ▼
+CA Bundle injected to ConfigMap
+        │
+        ▼
+Mounted into Client Pod
+        │
+        ▼
+Client trusts server certificate
+________________________________________
+22. Important Commands Summary
+Command	Purpose
+oc annotate service	request TLS certificate
+oc describe secret	view TLS data
+oc patch deployment	mount certificate
+oc exec	run commands in pod
+oc create configmap	create CA bundle
+oc annotate configmap	inject CA
+oc apply -f	deploy client
+________________________________________
+23. EX280 Exam Key Concepts
+You must know:
+•	Service CA controller
+•	TLS secrets
+•	ConfigMap CA injection
+•	Volume mounts
+•	Service DNS
+•	oc patch
+
