@@ -1,0 +1,309 @@
+Guided Exercise Summary: Project and Cluster Quotas (OpenShift)
+1️⃣ Purpose of the Exercise
+This exercise demonstrates how resource usage in one namespace can affect the entire cluster and how ResourceQuota prevents a 
+namespace from consuming excessive resources.
+________________________________________
+1. Initial Scenario (Without Quotas)
+A deployment test is created that requests 1 CPU per pod.
+oc create deployment test --image=hello-world-nginx
+oc set resources deployment test --requests=cpu=1
+When scaled to 8 replicas:
+oc scale deployment test --replicas=8
+Only 2 pods run, while others remain Pending because the cluster has insufficient CPU.
+Error example:
+FailedScheduling: Insufficient cpu
+________________________________________
+2. Impact on Other Namespaces
+Because the selfservice-quotas project consumed most CPU, another namespace (test) cannot create pods requesting 1 CPU.
+This shows:
+👉 One namespace can block resources for others if no quotas exist.
+________________________________________
+3. Fix: Create ResourceQuota
+Administrator creates a quota:
+oc create quota one-cpu --hard=requests.cpu=1
+This quota means:
+Maximum CPU requests in this namespace = 1 CPU
+Quota YAML example:
+spec:
+  hard:
+    requests.cpu: "1"
+________________________________________
+4. Effects of ResourceQuota
+Case 1: Scaling deployment
+If test deployment tries to scale to 8 replicas:
+❌ Not allowed
+Error:
+exceeded quota: one-cpu
+________________________________________
+Case 2: Deployment without CPU request
+A new deployment test-2 is created without CPU request.
+❌ Pods are not created.
+Error:
+must specify requests.cpu
+Because quota requires CPU requests to be specified.
+________________________________________
+5. Other Namespaces Still Work
+Another project test is created.
+Deployment test-3 requesting CPU:
+oc set resources deployment test-3 --requests=cpu=1
+✅ Pod runs successfully.
+This proves:
+👉 ResourceQuota only affects the namespace where it is applied.
+________________________________________
+6. Key Concepts Learned
+ResourceQuota
+Limits the total resources a namespace can use.
+Example:
+requests.cpu=1
+memory=2Gi
+pods=10
+________________________________________
+Benefits
+ResourceQuota helps to:
+✔ Prevent a namespace from consuming all cluster resources
+✔ Protect other projects in the cluster
+✔ Enforce fair resource usage
+________________________________________
+7. Important Commands
+Login
+oc login -u developer -p developer
+Create project
+oc new-project selfservice-quotas
+Create deployment
+oc create deployment test --image=image-name
+Request CPU
+oc set resources deployment test --requests=cpu=1
+Scale deployment
+oc scale deployment test --replicas=8
+Create quota
+oc create quota one-cpu --hard=requests.cpu=1
+View quota
+oc get quota one-cpu -o yaml
+Check events
+oc get events --sort-by .metadata.creationTimestamp
+________________________________________
+8. Final Conclusion
+Without quotas:
+•	One project can consume all cluster resources.
+With quotas:
+•	Each namespace has controlled resource limits.
+•	Other namespaces remain unaffected.
+
+
+
+
+
+
+
+
+
+Guided Exercise: Per-Project Resource Constraints (Limit Ranges)
+Goal
+Ensure that pods do not run without resource limits.
+By default:
+❌ Containers do NOT have CPU or memory limits
+This is dangerous because a container can consume all cluster resources.
+To solve this → LimitRange is used.
+________________________________________
+What is LimitRange?
+A LimitRange sets default and maximum resource limits for containers inside a namespace.
+It ensures that every container has:
+•	Default requests
+•	Default limits
+even if the developer does not specify them.
+Important:
+⚠️ LimitRange works inside a namespace (project).
+________________________________________
+Step 1 – Start the Lab
+Command:
+lab start selfservice-ranges
+Purpose:
+•	Prepare lab environment
+•	Ensure OpenShift cluster is ready
+•	Create required lab resources
+________________________________________
+Step 2 – Login to OpenShift Web Console
+Open browser:
+https://console-openshift-console.apps.ocp4.example.com
+Login with:
+Field	Value
+User	admin
+Password	redhatocp
+________________________________________
+Step 3 – Create a Project
+Navigate:
+Home → Projects → Create Project
+Create project:
+Name: selfservice-ranges
+Purpose:
+Projects = namespaces in OpenShift
+All workloads will run inside this namespace.
+________________________________________
+Step 4 – Create Deployment
+Navigate:
+Workloads → Deployments → Create Deployment
+Fill:
+Field	Value
+Name	example
+Image	registry.access.redhat.com/ubi8/httpd-24
+Create deployment.
+OpenShift automatically:
+•	Creates 3 pods
+•	Runs httpd container
+________________________________________
+Step 5 – Check Container Resources
+Go to:
+Workloads → Pods → Select Pod
+Open container details.
+You will see:
+Resource Requests: -
+Resource Limits: -
+Meaning:
+❌ No CPU request
+❌ No memory request
+❌ No CPU limit
+❌ No memory limit
+Containers are unrestricted.
+________________________________________
+Why is this Dangerous?
+If container has no limit:
+Example:
+Cluster memory = 16GB
+One container could consume:
+16GB memory
+This could crash other applications.
+________________________________________
+Step 6 – Create a LimitRange
+Navigate:
+Administration → LimitRanges
+Click:
+Create LimitRange
+Template appears:
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: limits
+spec:
+  limits:
+  - type: Container
+    defaultRequest:
+      memory: 256Mi
+    default:
+      memory: 512Mi
+Meaning:
+Setting	Value
+Default memory request	256 Mi
+Default memory limit	512 Mi
+Create it.
+________________________________________
+Important Behavior
+LimitRange only affects new pods.
+Existing pods:
+❌ Not modified.
+That’s why the old deployment still has no limits.
+________________________________________
+Step 7 – Delete the Deployment
+Navigate:
+Workloads → Deployments
+Delete:
+example
+This removes:
+•	Deployment
+•	ReplicaSet
+•	Pods
+________________________________________
+Step 8 – Create Deployment Again
+Create same deployment again.
+Name: example
+Image: registry.access.redhat.com/ubi8/httpd-24
+OpenShift again creates 3 pods.
+________________________________________
+Step 9 – Check Container Resources Again
+Go to:
+Workloads → Pods → Pod → Container
+Now you will see:
+Memory Request: 256Mi
+Memory Limit: 512Mi
+Meaning:
+LimitRange automatically added default values.
+Even though developer did not specify resources.
+________________________________________
+Step 10 – Check Deployment YAML
+Go to:
+Workloads → Deployments → example → YAML
+You will see:
+resources: {}
+Meaning:
+Deployment did not define resources.
+LimitRange adds limits only to pods, not to the deployment YAML.
+Important concept:
+Deployment spec remains unchanged
+Pod spec gets modified
+________________________________________
+Step 11 – Check Pod Metrics
+Navigate:
+Pods → Pod → Metrics
+You will see graph showing:
+Metric	Value
+Memory usage	~50 Mi
+Memory request	256 Mi
+Memory limit	512 Mi
+Example:
+Usage  = 50Mi
+Request = 256Mi
+Limit = 512Mi
+Meaning:
+Pod reserves 256Mi memory even though it uses only 50Mi.
+________________________________________
+Important Observation
+If many pods run:
+Example:
+100 pods
+Memory reserved:
+256Mi × 100 = 25.6GB
+Even if actual usage is smaller.
+This can cause resource waste.
+________________________________________
+When to Use LimitRanges
+LimitRanges help when:
+✔ Developers forget to define limits
+✔ Cluster admins want default policies
+✔ Prevent unlimited containers
+✔ Improve cluster stability
+________________________________________
+When to Be Careful
+LimitRanges can cause:
+•	Resource over-reservation
+•	Quota issues
+Example:
+Namespace quota:
+Memory request quota = 2GB
+Each pod requests:
+256Mi
+Max pods allowed:
+2GB / 256Mi = 8 pods
+Even if cluster has more memory.
+________________________________________
+Finish Lab
+Command:
+lab finish selfservice-ranges
+Purpose:
+•	Clean resources
+•	Prepare for next exercise
+________________________________________
+Key Concepts to Remember
+Concept	Meaning
+LimitRange	Defines default resource limits
+Scope	Namespace
+Affects	New pods only
+Not modify	Deployment YAML
+Adds	CPU/memory request and limit
+________________________________________
+Quick Difference (Exam Important)
+Feature	Purpose
+ResourceQuota	Limits total resources in namespace
+LimitRange	Sets default/min/max resource per container
+Example:
+LimitRange → per container
+ResourceQuota → per namespace
+
