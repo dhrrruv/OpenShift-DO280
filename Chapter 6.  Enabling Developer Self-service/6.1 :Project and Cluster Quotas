@@ -1,0 +1,255 @@
+Project and Cluster Quotas
+Goal
+Allow developers from multiple teams to safely create workloads in the cluster without exhausting cluster resources.
+Administrators achieve this by configuring:
+•	Resource Quotas
+•	Cluster Resource Quotas
+•	Limit Ranges
+•	Project Templates
+•	Self-provisioner roles
+________________________________________
+1. Why Resource Control is Needed
+In a Kubernetes / OpenShift cluster:
+•	Multiple users deploy applications.
+•	Applications consume CPU, memory, storage, and pods.
+•	Cluster resources are limited.
+If one user deploys many workloads:
+•	CPU or memory may be exhausted.
+•	Other applications may fail.
+•	Autoscaling clusters may create unexpected costs.
+To solve this, Kubernetes provides:
+1️⃣ Resource Requests
+Minimum resources required for a container.
+Example:
+•	CPU needed to run
+•	Memory needed to start
+If cluster doesn’t have these resources → pod will not be scheduled.
+Example:
+resources:
+  requests:
+    cpu: 500m
+    memory: 256Mi
+Meaning:
+Resource	Meaning
+500m CPU	0.5 CPU core required
+256Mi	Minimum memory needed
+________________________________________
+2️⃣ Resource Limits
+Maximum resources a container can consume.
+Example:
+resources:
+  limits:
+    cpu: 1
+    memory: 512Mi
+Meaning:
+Resource	Meaning
+1 CPU	Container cannot exceed 1 CPU
+512Mi	Memory usage cannot exceed 512MB
+If container exceeds memory → pod may be killed.
+________________________________________
+2. Resource Quotas
+A ResourceQuota restricts how many resources a namespace (project) can consume.
+Important point:
+⚠️ ResourceQuota works per namespace, not per user.
+Example:
+Namespace: project-dev
+All workloads inside this namespace share the quota.
+________________________________________
+ResourceQuota YAML Example
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: memory
+  namespace: example
+spec:
+  hard:
+    limits.memory: 4Gi
+    requests.memory: 2Gi
+Explanation:
+Field	Meaning
+limits.memory	Max memory containers can use
+requests.memory	Max memory containers can reserve
+hard	Maximum allowed values
+Meaning:
+Total memory used by pods in namespace cannot exceed 4GB.
+________________________________________
+3. Types of Resource Quotas
+1️⃣ Compute Resource Quotas
+Control CPU and memory usage.
+Examples:
+Resource	Meaning
+limits.cpu	Max CPU usage
+limits.memory	Max memory usage
+requests.cpu	Max CPU reservation
+requests.memory	Max memory reservation
+Example scenario:
+Namespace limit = 4 CPU
+Pods inside namespace:
+Pod	CPU
+Pod1	1
+Pod2	1
+Pod3	2
+Total = 4 CPU
+Another pod requesting CPU → ❌ rejected
+________________________________________
+2️⃣ Object Count Quotas
+Limits number of Kubernetes objects.
+Examples:
+Object	Syntax
+Pods	count/pods
+Deployments	count/deployments.apps
+Services	count/services
+Example:
+Limit pods to 1.
+Command:
+oc create quota example --hard=count/pods=1
+Meaning:
+Namespace can only run 1 pod.
+________________________________________
+4. Creating Resource Quotas
+Using CLI
+Command:
+oc create resourcequota <name> --hard=<resource>=<value>
+Example:
+oc create quota example --hard=count/pods=1
+Short form:
+quota = resourcequota
+Output:
+resourcequota/example created
+________________________________________
+5. Viewing Resource Quotas
+List quotas
+oc get quota
+Example output:
+NAME      REQUEST        LIMIT
+example   count/pods:1/1
+Meaning:
+Value	Meaning
+1/1	1 pod used out of 1 allowed
+________________________________________
+View detailed quota
+oc describe quota example
+or
+oc get quota example -o yaml
+Example output:
+status:
+  hard:
+    count/pods: "1"
+  used:
+    count/pods: "0"
+Meaning:
+Field	Meaning
+hard	maximum allowed
+used	currently used
+________________________________________
+6. Troubleshooting Resource Quotas
+Example mistake:
+count/deployment=1
+Wrong syntax.
+Correct syntax:
+count/deployments.apps
+Why?
+Because deployments belong to apps API group.
+________________________________________
+Error Example
+oc create deployment --image=nginx hello
+Error:
+exceeded quota
+Meaning:
+Quota limit reached.
+________________________________________
+Indirect failures
+Sometimes:
+Deployment created successfully but pods fail.
+Check events:
+oc get events
+Example message:
+FailedCreate: exceeded quota
+Meaning:
+Pod creation blocked by quota.
+________________________________________
+7. Cluster Resource Quotas
+Problem:
+ResourceQuota only works per namespace.
+But sometimes:
+One team has multiple namespaces.
+Example:
+Team Dev:
+dev-project1
+dev-project2
+dev-project3
+Admin wants to limit total CPU usage of the entire team.
+Solution:
+ClusterResourceQuota
+Works across multiple namespaces.
+________________________________________
+Example YAML
+apiVersion: quota.openshift.io/v1
+kind: ClusterResourceQuota
+metadata:
+  name: example
+spec:
+  quota:
+    hard:
+      requests.cpu: "10"
+  selector:
+    labels:
+      matchLabels:
+        group: dev
+Meaning:
+All namespaces with label:
+group=dev
+share 10 CPU total.
+________________________________________
+8. Creating Cluster Resource Quota
+Command:
+oc create clusterresourcequota example \
+--project-label-selector=group=dev \
+--hard=requests.cpu=10
+Explanation:
+Part	Meaning
+clusterresourcequota	resource type
+project-label-selector	select namespaces
+requests.cpu=10	CPU limit
+________________________________________
+9. Checking Cluster Resource Quotas
+Command:
+oc describe AppliedClusterResourceQuota -n <namespace>
+Example:
+Resource        Used    Hard
+requests.cpu    2250m   10
+Meaning:
+Value	Meaning
+Used	current CPU
+Hard	maximum allowed
+________________________________________
+10. Where to See Quotas in Web Console
+Navigation:
+Administration
+     ↓
+ResourceQuotas
+You can see:
+•	Namespace quotas
+•	Cluster quotas
+•	Usage statistics
+________________________________________
+Key Concepts Summary
+Concept	Purpose
+Resource Requests	Minimum resources needed
+Resource Limits	Maximum resources allowed
+ResourceQuota	Limit resources in one namespace
+Object Quota	Limit number of objects
+ClusterResourceQuota	Limit resources across namespaces
+________________________________________
+Simple Real-World Example
+Cluster resources:
+CPU = 32
+Memory = 64GB
+Admin sets:
+Namespace quota:
+CPU = 4
+Memory = 8GB
+Pods = 10
+Meaning:
+Developer cannot create workloads exceeding these limits.
+
