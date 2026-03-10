@@ -1,0 +1,309 @@
+Configure Multus Secondary Networks
+Objective
+Expose applications to external access by using a secondary network instead of the default pod network.
+________________________________________
+1. Default Kubernetes Networks
+In Kubernetes / OpenShift there are two main networks.
+Network	Purpose
+Pod Network	Communication between pods
+Service Network	Stable IP for services
+Architecture:
+Pod A  ─── Pod Network ─── Pod B
+        │
+        ▼
+   Service Network
+By default:
+•	All pods can communicate with each other.
+•	Pods get one network interface (eth0).
+________________________________________
+2. Why Use Secondary Networks
+Sometimes the default pod network is not enough.
+Reasons to use secondary networks:
+1️⃣ Performance
+Dedicated network for heavy traffic.
+Example:
+Database traffic
+Video streaming
+High-speed data transfer
+________________________________________
+2️⃣ Security Isolation
+Separate sensitive traffic.
+Example:
+Frontend network
+Backend network
+Database network
+________________________________________
+3️⃣ Traffic Control
+Separate incoming and outgoing traffic.
+Example:
+Pod
+ ├─ eth0 → cluster network
+ └─ net1 → external network
+________________________________________
+3. Multus CNI
+Multus is a CNI plugin that allows multiple network interfaces in a pod.
+Without Multus:
+Pod
+ └── eth0 (default network)
+With Multus:
+Pod
+ ├── eth0 (default network)
+ ├── net1 (secondary network)
+ └── net2 (another network)
+Multus acts like a network manager.
+It attaches pods to multiple networks.
+________________________________________
+4. Types of Secondary Networks in OpenShift
+OpenShift 4.18 supports:
+Type	Meaning
+NAD	NetworkAttachmentDefinition
+UDN	UserDefinedNetwork
+CUDN	ClusterUserDefinedNetwork
+________________________________________
+5. NetworkAttachmentDefinition (NAD)
+NAD defines how a pod connects to a secondary network.
+It is a namespaced resource.
+Meaning:
+Network only available in that namespace
+________________________________________
+NAD Example
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: example
+spec:
+  config: |
+    {
+      "cniVersion": "0.3.1",
+      "name": "example",
+      "type": "host-device",
+      "device": "ens4",
+      "ipam": {
+        "type": "dhcp"
+      }
+    }
+Explanation:
+Field	Meaning
+name	network name
+type	network plugin
+device	node interface
+ipam	IP address management
+________________________________________
+6. Types of NAD Networks
+OpenShift supports several network types.
+________________________________________
+1️⃣ Host Device
+Directly attaches a node interface to a pod.
+Example:
+Node NIC (ens4)
+     │
+     ▼
+     Pod
+High performance.
+________________________________________
+2️⃣ Bridge Network
+Creates a virtual bridge.
+Pods connected to the bridge can communicate.
+Example:
+        Bridge
+       /   |   \
+     Pod  Pod  Pod
+Common in virtualization.
+________________________________________
+3️⃣ MACVLAN
+Creates virtual interfaces with different MAC addresses.
+Example:
+Network
+   │
+   ├── Pod1 (MAC1)
+   ├── Pod2 (MAC2)
+   └── Pod3 (MAC3)
+Used when pods need unique MAC addresses.
+________________________________________
+4️⃣ IPVLAN
+Similar to MACVLAN but shares MAC address.
+Example:
+Network
+   │
+Shared MAC
+   ├── Pod1
+   ├── Pod2
+   └── Pod3
+Advantage:
+•	Uses fewer MAC addresses
+Useful when network limits MAC addresses.
+________________________________________
+7. IP Address Management (IPAM)
+IPAM provides IP addresses.
+Example:
+DHCP
+"ipam": {
+ "type": "dhcp"
+}
+IP assigned automatically.
+________________________________________
+Static IP
+"ipam": {
+ "type": "static",
+ "addresses": [
+   {"address": "192.168.1.10/24"}
+ ]
+}
+Manual IP assignment.
+________________________________________
+8. User Defined Networks (UDN)
+UDN allows non-admin users to create networks easily.
+Managed by OVN-Kubernetes.
+Benefits:
+Benefit	Explanation
+Isolation	namespace networks
+Simple configuration	easier than NAD
+consistent IP	predictable IP addressing
+________________________________________
+9. UDN Isolation
+Each namespace can have its own network.
+Example:
+Namespace A → UDN A
+Namespace B → UDN B
+Pods cannot communicate unless allowed.
+________________________________________
+10. Primary vs Secondary UDN
+UDN can act as primary or secondary network.
+________________________________________
+Primary UDN (P-UDN)
+Replaces default pod network.
+Pod
+ └── UDN Network (eth0)
+Default cluster network not used.
+________________________________________
+Secondary UDN (S-UDN)
+Added as extra interface.
+Pod
+ ├── eth0 (default network)
+ └── net1 (UDN network)
+________________________________________
+11. Creating Namespace for UDN
+Namespace must include this label:
+labels:
+  k8s.ovn.org/primary-user-defined-network: ""
+Important rule:
+You cannot add this label later.
+Namespace must be created with it.
+________________________________________
+12. Creating UDN (CLI)
+Example:
+apiVersion: k8s.ovn.org/v1
+kind: UserDefinedNetwork
+metadata:
+  name: my-udn
+  namespace: my-namespace
+spec:
+  topology: Layer2
+  layer2:
+    role: Primary
+    subnets:
+      - "10.0.0.0/16"
+  ipam:
+    lifecycle: Persistent
+Explanation:
+Field	Meaning
+topology	network layer
+role	primary or secondary
+subnets	network range
+lifecycle	persistent IP
+________________________________________
+13. Layer 2 vs Layer 3 UDN
+Layer 2
+Pods share same subnet.
+Pod1
+Pod2
+Pod3
+ │
+ Layer2 Network
+________________________________________
+Layer 3
+Each node has its own subnet.
+Example:
+Node1 → 10.0.1.0/24
+Node2 → 10.0.2.0/24
+Node3 → 10.0.3.0/24
+If pod moves nodes:
+IP changes
+________________________________________
+14. Cluster User Defined Network (CUDN)
+CUDN is similar to UDN but works across multiple namespaces.
+Example:
+Namespace A
+Namespace B
+Namespace C
+     │
+     ▼
+     CUDN
+Used for tenant isolation.
+Only cluster admins can create CUDN.
+________________________________________
+15. CUDN Example
+apiVersion: k8s.ovn.org/v1
+kind: ClusterUserDefinedNetwork
+metadata:
+  name: development-udn
+spec:
+  namespaceSelector:
+    matchLabels:
+      environment: development
+Namespaces with label:
+environment=development
+Join the network.
+________________________________________
+16. Attaching Pods to Secondary Networks
+Pods attach using annotation.
+Annotation:
+k8s.v1.cni.cncf.io/networks
+Example deployment:
+metadata:
+  annotations:
+    k8s.v1.cni.cncf.io/networks: example
+Result:
+Pod
+ ├── eth0 → default network
+ └── net1 → example network
+________________________________________
+17. Checking Network Interfaces
+Command:
+oc get pod example \
+-o jsonpath='{.metadata.annotations.k8s\.v1\.cni\.cncf\.io/network-status}'
+Example output:
+eth0 → default network
+net1 → secondary network
+________________________________________
+18. Multus Network Interface Naming
+Multus automatically names interfaces.
+eth0 → default network
+net1 → first additional network
+net2 → second additional network
+________________________________________
+19. Advantages of Multus Networks
+Advantage	Explanation
+performance	dedicated networks
+security	network isolation
+flexibility	multiple interfaces
+advanced networking	telecom, NFV
+________________________________________
+20. Chapter Concept Summary
+Concept	Purpose
+Multus	multiple pod networks
+NAD	defines network attachment
+UDN	namespace network
+CUDN	multi-namespace network
+IPAM	IP allocation
+net1	secondary interface
+________________________________________
+21. Important DO280 Exam Points
+Remember these:
+•	Multus allows multiple networks for pods
+•	NAD defines additional networks
+•	UDN provides namespace-level isolation
+•	CUDN allows shared networks across namespaces
+•	Pods attach networks using annotations
+•	Multus creates net1, net2 interfaces
+
