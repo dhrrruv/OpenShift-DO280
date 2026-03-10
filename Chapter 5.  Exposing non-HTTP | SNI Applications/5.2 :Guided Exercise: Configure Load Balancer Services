@@ -1,0 +1,327 @@
+Guided Exercise: Configure Load Balancer Services
+Goal
+Expose applications to external access without using an ingress controller.
+Normally OpenShift exposes applications using Routes, but routes work only for HTTP/HTTPS traffic.
+Some protocols cannot use routes, so we use other mechanisms like:
+1.	LoadBalancer Services
+2.	Secondary Networks (Multus)
+________________________________________
+1. Why Routes and Ingress Are Not Always Enough
+OpenShift Routes and Kubernetes Ingress work mainly for:
+•	HTTP
+•	HTTPS
+•	TLS with SNI
+Example:
+https://app.example.com
+Router uses the hostname to route traffic.
+Example routing:
+https://a.example.com → Service A
+https://b.example.com → Service B
+This works because HTTP supports virtual hosting.
+________________________________________
+2. Protocols That Cannot Use Routes
+Many protocols do not support virtual hosting or SNI.
+Examples:
+Protocol	Example Port
+SSH	22
+MySQL	3306
+LDAP	389
+SMTP	25
+POP3	110
+IMAP	143
+Example service:
+SSH server
+IP: 1.2.3.4
+Port: 22
+Clients must connect directly:
+1.2.3.4:22
+Routes cannot expose these.
+________________________________________
+3. Solution: Kubernetes Services
+Kubernetes provides Service resources to expose pods.
+Pods are dynamic:
+•	Pods may restart
+•	Pods may scale
+•	Pods may move nodes
+Users cannot rely on pod IP addresses.
+Services provide:
+•	Stable IP
+•	Stable port
+•	Internal load balancing
+________________________________________
+4. Service Components
+A Kubernetes Service contains:
+Component	Purpose
+selector	identifies pods
+port	service port
+targetPort	pod port
+Example:
+apiVersion: v1
+kind: Service
+metadata:
+  name: example
+spec:
+  selector:
+    app: example
+  ports:
+  - port: 80
+    targetPort: 8080
+________________________________________
+5. Types of Kubernetes Services
+There are four main service types.
+Service Type	Purpose
+ClusterIP	internal access
+NodePort	external access via node
+LoadBalancer	external load balancer
+ExternalIP	manual external IP
+________________________________________
+6. ClusterIP Service
+Default service type.
+Accessible only inside cluster.
+Example architecture:
+Pod A
+   │
+   ▼
+Service (ClusterIP)
+   │
+   ▼
+Pod B
+Pod C
+Pod D
+Example:
+spec:
+  type: ClusterIP
+Example service IP:
+172.30.21.79
+Pods connect via:
+http://service-name
+or
+http://service-name.namespace.svc
+________________________________________
+7. NodePort Service
+Exposes service on each node IP + port.
+Architecture:
+External User
+     │
+     ▼
+NodeIP:NodePort
+     │
+     ▼
+ClusterIP Service
+     │
+     ▼
+Pods
+Example:
+192.168.1.10:30001
+NodePort range:
+30000 – 32767
+Example YAML:
+spec:
+  type: NodePort
+  ports:
+  - port: 80
+    nodePort: 30001
+________________________________________
+8. LoadBalancer Service
+Used to expose services directly with an external IP.
+Architecture:
+Internet
+   │
+   ▼
+Cloud Load Balancer
+   │
+   ▼
+Kubernetes Service
+   │
+   ▼
+Pods
+Example YAML:
+spec:
+  type: LoadBalancer
+Example output:
+NAME         TYPE           CLUSTER-IP      EXTERNAL-IP
+example-lb   LoadBalancer   172.30.21.79    192.168.50.20
+Users connect:
+192.168.50.20:1234
+________________________________________
+9. Load Balancer in Cloud Environments
+Cloud providers automatically create external load balancers.
+Examples:
+Cloud	Load Balancer
+AWS	Elastic Load Balancer
+Azure	Azure Load Balancer
+IBM Cloud	IBM Load Balancer
+GCP	Google Load Balancer
+Example:
+Service type: LoadBalancer
+        │
+        ▼
+AWS ELB created automatically
+Important note:
+Every load balancer costs money.
+________________________________________
+10. Load Balancer in Bare-Metal Clusters
+On bare metal, Kubernetes cannot create cloud load balancers.
+Solution:
+MetalLB
+________________________________________
+11. MetalLB
+MetalLB is a software load balancer for bare-metal clusters.
+It assigns external IP addresses to services.
+Example:
+LoadBalancer Service
+      │
+      ▼
+MetalLB
+      │
+      ▼
+External IP assigned
+Example IP:
+192.168.50.20
+________________________________________
+12. MetalLB Modes
+MetalLB works in two networking modes.
+________________________________________
+1️⃣ Layer 2 Mode (ARP)
+Default mode.
+Uses ARP announcements.
+Example:
+LoadBalancer IP = 192.168.50.20
+Node advertises IP via ARP
+Traffic sent to that node
+Flow:
+Client
+  │
+  ▼
+Node (advertising IP)
+  │
+  ▼
+Service
+  │
+  ▼
+Pod
+Advantages:
+•	Simple
+•	Works without router configuration
+________________________________________
+2️⃣ Layer 3 Mode (BGP)
+Uses Border Gateway Protocol.
+Routers learn service IP routes.
+Flow:
+Router
+  │
+  ▼
+Node
+  │
+  ▼
+Service
+  │
+  ▼
+Pods
+Requirements:
+•	Router BGP configuration
+•	Autonomous System Number (ASN)
+Advantages:
+•	More scalable
+•	Better load distribution
+________________________________________
+13. MetalLB Operator
+MetalLB is installed via Operator Lifecycle Manager (OLM).
+After installation, it creates resources in:
+metallb-system namespace
+Example command:
+oc get metallb -n metallb-system
+Output:
+NAME     AGE
+metallb  7d
+________________________________________
+14. MetalLB Important Resources
+1️⃣ IPAddressPool
+Defines IP range used for services.
+Example:
+oc get ipaddresspool -n metallb-system
+Example output:
+NAME                      ADDRESSES
+metallb-ip-pool           192.168.50.20-192.168.50.40
+________________________________________
+2️⃣ L2Advertisement
+Advertises IPs using ARP.
+Example:
+oc get l2advertisement -n metallb-system
+Output:
+NAME                       IPADDRESSPOOLS
+metallb-l2                 metallb-ip-pool
+________________________________________
+15. Creating LoadBalancer Service
+Example YAML:
+apiVersion: v1
+kind: Service
+metadata:
+  name: example-lb
+spec:
+  selector:
+    name: example
+  ports:
+  - port: 1234
+    targetPort: 1234
+  type: LoadBalancer
+________________________________________
+16. Imperative Command
+You can create it using CLI.
+oc expose deployment example \
+--port=1234 \
+--type=LoadBalancer
+________________________________________
+17. Checking External IP
+oc get service
+Example:
+NAME         TYPE           CLUSTER-IP       EXTERNAL-IP
+example-lb   LoadBalancer   172.30.21.79     192.168.50.20
+________________________________________
+18. Retrieve IP via JSONPath
+oc get example-lb -o jsonpath="{.status.loadBalancer.ingress}"
+Output:
+[{"ip":"192.168.50.20"}]
+________________________________________
+19. Testing Connectivity
+After exposing service:
+Test with tools:
+Tool	Purpose
+curl	HTTP
+ping	connectivity
+traceroute	path analysis
+ssh	SSH testing
+mysql	database testing
+Example:
+curl http://192.168.50.20:1234
+________________________________________
+20. Best Practice
+Preferred exposure order:
+1️⃣ Route / Ingress
+2️⃣ LoadBalancer
+3️⃣ NodePort
+Reason:
+Routes provide:
+•	TLS
+•	security
+•	hostname routing
+________________________________________
+21. Chapter Concept Summary
+Feature	Purpose
+Route	expose HTTP/HTTPS
+Ingress	HTTP routing
+LoadBalancer	expose non-HTTP protocols
+NodePort	expose service via node port
+MetalLB	load balancer for bare metal
+IPAddressPool	range of external IPs
+L2Advertisement	ARP announcements
+________________________________________
+22. Important DO280 Exam Concepts
+You should remember:
+•	Routes only support HTTP/HTTPS
+•	LoadBalancer exposes TCP services
+•	MetalLB provides load balancing for bare metal clusters
+•	IPAddressPool defines IP range
+•	Layer2 uses ARP
+•	Layer3 uses BGP
+
