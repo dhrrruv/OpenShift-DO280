@@ -1,0 +1,157 @@
+Per-Project Resource Constraints: Limit Ranges
+Limit Ranges in OpenShift / Kubernetes (Summary)
+1️⃣ Purpose of Limit Ranges
+LimitRange is used to control resource usage inside a namespace (project).
+While ResourceQuota controls total resources for a namespace, LimitRange controls resource usage for each pod or container.
+So:
+•	ResourceQuota → Namespace level
+•	LimitRange → Pod/Container level
+________________________________________
+2️⃣ Why LimitRange is Needed
+Problems without LimitRange:
+•	Users may create pods without CPU/memory limits
+•	Pods may consume too many resources
+•	Users may forget to set requests and limits
+•	Workloads may exhaust namespace quota
+LimitRange solves this by:
+✅ Setting default values
+✅ Enforcing minimum and maximum limits
+________________________________________
+3️⃣ Example LimitRange Configuration
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: mem-limit-range
+  namespace: default
+spec:
+  limits:
+  - type: Container
+    default:
+      memory: 512Mi
+    defaultRequest:
+      memory: 256Mi
+This means:
+Setting	Meaning
+default	Default limit applied to containers
+defaultRequest	Default resource request
+type	Applied to containers
+________________________________________
+4️⃣ Types of Limits in LimitRange
+Default Limit
+Applied automatically if the user does not define limits.
+Example
+default:
+ cpu: 500m
+ memory: 512Mi
+________________________________________
+Default Request
+Minimum resource guaranteed for a container.
+defaultRequest:
+ cpu: 250m
+ memory: 256Mi
+________________________________________
+Maximum
+Maximum resources allowed for a container.
+max:
+ cpu: 1
+ memory: 1Gi
+If a container exceeds this → Pod creation fails
+________________________________________
+Minimum
+Minimum resources required.
+min:
+ cpu: 125m
+ memory: 128Mi
+If request is below this → Pod creation fails
+________________________________________
+Limit-to-Request Ratio
+Defines maximum ratio between limit and request.
+Example:
+ratio = 2
+limit <= 2 × request
+(Not covered deeply in the course.)
+________________________________________
+5️⃣ Full Example LimitRange
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: example
+  namespace: example
+spec:
+  limits:
+  - type: Container
+    default:
+      cpu: 500m
+      memory: 512Mi
+    defaultRequest:
+      cpu: 250m
+      memory: 256Mi
+    max:
+      cpu: 1
+      memory: 1Gi
+    min:
+      cpu: 125m
+      memory: 128Mi
+________________________________________
+6️⃣ What Happens When Pod is Created
+If deployment has no resource specification:
+Kubernetes automatically applies:
+Limits:
+ cpu: 500m
+ memory: 512Mi
+
+Requests:
+ cpu: 250m
+ memory: 256Mi
+These values come from default and defaultRequest.
+________________________________________
+7️⃣ When Pod Creation Fails
+Case 1: Exceeds Maximum
+Example:
+limit = 1200m
+max = 1 CPU
+Error:
+maximum cpu usage per Container is 1
+________________________________________
+Case 2: Below Minimum
+Example:
+request = 100m
+min = 125m
+Error:
+minimum cpu usage per Container is 125m
+________________________________________
+8️⃣ Important Rules for LimitRange Values
+Must follow this order:
+max ≥ default ≥ defaultRequest ≥ min
+Example valid:
+max: 1
+default: 500m
+defaultRequest: 250m
+min: 125m
+________________________________________
+9️⃣ Important Notes
+•	LimitRange does NOT affect existing pods
+•	It only affects new pods
+•	Admission controller applies it automatically
+•	Applies to:
+o	Containers
+o	Pods
+o	PVCs
+o	Images
+o	ImageStreams
+________________________________________
+🔟 LimitRange vs ResourceQuota
+Feature	ResourceQuota	LimitRange
+Scope	Namespace	Pod / Container
+Purpose	Limit total resources	Control per-pod resources
+Example	total CPU ≤ 8	pod CPU ≤ 1
+________________________________________
+1️⃣1️⃣ Key Command
+Create limit range:
+oc create -f limitrange.yaml
+Modify deployment resources:
+oc set resources deployment example --limits=cpu=500m
+________________________________________
+1️⃣2️⃣ One-Line Exam Answer
+LimitRange is a Kubernetes object that enforces default, minimum, and maximum resource limits for pods or containers within a namespace.
+
