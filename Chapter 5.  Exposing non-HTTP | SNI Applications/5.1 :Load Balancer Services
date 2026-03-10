@@ -188,6 +188,20 @@ ________________________________________
 1️⃣ Layer 2 Mode (ARP)
 Default mode.
 Uses ARP announcements.
+This mode uses Address Resolution Protocol (ARP).
+ARP is used in local networks to find which machine owns an IP.
+Example in a normal LAN:
+Who has 192.168.1.10?
+The device replies:
+I have 192.168.1.10
+How MetalLB Uses ARP
+MetalLB picks one Kubernetes node to advertise the IP.
+Example:
+Service IP = 192.168.50.20
+MetalLB chooses Node2
+Now Node2 tells the network:
+192.168.50.20 is me
+So traffic goes to Node2.
 Example:
 LoadBalancer IP = 192.168.50.20
 Node advertises IP via ARP
@@ -210,6 +224,26 @@ ________________________________________
 2️⃣ Layer 3 Mode (BGP)
 Uses Border Gateway Protocol.
 Routers learn service IP routes.
+This mode uses Border Gateway Protocol (BGP).
+BGP is the protocol routers use to exchange routes on the internet.
+Instead of ARP announcements, nodes tell the router:
+Route to 192.168.50.20 through me
+How It Works
+Nodes speak BGP with the router.
+Example router:
+Router
+  │
+  ├── Node1
+  ├── Node2
+  └── Node3
+
+All nodes advertise the service IP.
+
+Node1 → route 192.168.50.20
+Node2 → route 192.168.50.20
+Node3 → route 192.168.50.20
+
+The router then balances traffic between them.
 Flow:
 Router
   │
