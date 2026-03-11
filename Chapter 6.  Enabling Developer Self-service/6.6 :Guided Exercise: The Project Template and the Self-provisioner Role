@@ -1,0 +1,270 @@
+Guided Exercise: The Project Template and the Self-provisioner Role
+1️⃣ Goal of This Exercise
+You configure OpenShift so that:
+1️⃣ Only specific users can create projects
+2️⃣ Every new project automatically has a memory restriction
+Final result:
+Feature	Result
+Project creation	Only provisioners group
+Project admin access	provisioners group
+Memory limit	Max 1Gi per container
+________________________________________
+2️⃣ Lab Preparation
+Command:
+lab start selfservice-projtemplate
+What this command does internally:
+It creates:
+Resource	Purpose
+user provisioner1	allowed to create projects
+user provisioner2	allowed to create projects
+group provisioners	group with permission
+users added to group	provisioner1 & provisioner2
+Verify group:
+oc describe group provisioners
+Example output:
+Users:
+  provisioner1
+  provisioner2
+Meaning both users belong to this group.
+________________________________________
+3️⃣ Default OpenShift Behavior
+Normally OpenShift allows all authenticated users to create projects.
+Why?
+Because of this ClusterRoleBinding:
+self-provisioners
+Check it:
+oc describe clusterrolebinding self-provisioners
+You will see:
+subjects:
+Group system:authenticated:oauth
+Meaning:
+Any logged-in user can run:
+oc new-project myproject
+________________________________________
+4️⃣ Restrict Project Creation
+Goal:
+Only provisioners group can create projects.
+Edit role binding:
+oc edit clusterrolebinding self-provisioners
+Change:
+Group system:authenticated:oauth
+to
+Group provisioners
+Final configuration:
+subjects:
+- apiGroup: rbac.authorization.k8s.io
+  kind: Group
+  name: provisioners
+________________________________________
+5️⃣ Test the Permission
+Login as developer
+oc login -u developer -p developer
+Try creating project:
+oc new-project test
+Result:
+Forbidden
+You may not request a new project via this API
+Meaning:
+Developer cannot create projects anymore.
+________________________________________
+6️⃣ Test Allowed User
+Login as provisioner1:
+oc login -u provisioner1 -p redhat
+Create project:
+oc new-project test
+Result:
+Now using project "test"
+Meaning:
+Provisioner users can create projects.
+________________________________________
+7️⃣ Test Project Access
+Create resource:
+oc create configmap test-cm
+ConfigMap is a simple Kubernetes object used to store configuration data.
+If it works → user has project permissions.
+________________________________________
+8️⃣ Verify Other User Cannot Access
+Login as provisioner2:
+oc login -u provisioner2 -p redhat
+Try:
+oc project test
+Result:
+You are not a member of project "test"
+Why?
+Because default template gives admin access only to requesting user.
+________________________________________
+9️⃣ Delete Test Project
+Admin deletes the project.
+Login:
+oc login -u admin -p redhatocp
+Delete:
+oc delete project test
+________________________________________
+🔟 Create Test Namespace
+Now we design a LimitRange.
+Create namespace:
+oc create namespace template-test
+Namespace is used only to design and test resources.
+________________________________________
+1️⃣1️⃣ Create LimitRange
+Edit file:
+limitrange.yaml
+Content:
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: max-memory
+  namespace: template-test
+spec:
+  limits:
+  - max:
+      memory: 1Gi
+    type: Container
+Meaning:
+Container cannot request more than 1Gi memory.
+Create resource:
+oc create -f limitrange.yaml
+________________________________________
+1️⃣2️⃣ Test LimitRange
+Deployment YAML requests:
+memory: 2Gi
+Create deployment:
+oc create -f deployment.yaml -n template-test
+Deployment is created.
+But pods are not created.
+Check pods:
+oc get pod -n template-test
+Output:
+No resources found
+________________________________________
+1️⃣3️⃣ Check Events
+Command:
+oc get events -n template-test
+Message:
+pods is forbidden:
+maximum memory usage per container is 1Gi
+but limit is 2Gi
+Meaning:
+LimitRange blocked pod creation.
+________________________________________
+1️⃣4️⃣ Create Project Template
+Now we convert this configuration into a Project Template.
+Generate template:
+oc adm create-bootstrap-project-template -o yaml > template.yaml
+This generates default project template.
+________________________________________
+1️⃣5️⃣ Modify Template
+We add:
+1️⃣ Project object
+2️⃣ RoleBinding
+3️⃣ LimitRange
+Important modification:
+Change RoleBinding subject
+Default:
+User
+Change to:
+Group provisioners
+________________________________________
+Add LimitRange
+- apiVersion: v1
+  kind: LimitRange
+  metadata:
+    name: max-memory
+    namespace: ${PROJECT_NAME}
+  spec:
+    limits:
+    - default:
+        memory: 1Gi
+      defaultRequest:
+        memory: 1Gi
+      max:
+        memory: 1Gi
+      type: Container
+Important variable:
+${PROJECT_NAME}
+OpenShift replaces it automatically when project is created.
+________________________________________
+1️⃣6️⃣ Create Template
+Command:
+oc create -f template.yaml -n openshift-config
+Namespace:
+openshift-config
+This is where cluster configuration templates are stored.
+________________________________________
+1️⃣7️⃣ Configure Cluster to Use Template
+Edit project configuration:
+oc edit projects.config.openshift.io cluster
+Add:
+spec:
+  projectRequestTemplate:
+    name: project-request
+Meaning:
+Whenever someone runs:
+oc new-project
+OpenShift uses this template.
+________________________________________
+1️⃣8️⃣ API Server Restart
+After configuration:
+OpenShift restarts API server pods.
+Watch restart:
+watch oc get pod -n openshift-apiserver
+Wait until status becomes:
+Running
+________________________________________
+1️⃣9️⃣ Test New Template
+Login:
+oc login -u provisioner1 -p redhat
+Create project:
+oc new-project test
+Now project contains automatically:
+•	RoleBinding
+•	LimitRange
+________________________________________
+2️⃣0️⃣ Verify Access
+Login:
+oc login -u provisioner2 -p redhat
+Now user can access project.
+Create resource:
+oc create configmap test-cm
+Because template granted group access.
+________________________________________
+2️⃣1️⃣ Verify LimitRange
+Create deployment:
+oc create -f deployment.yaml
+Deployment requests:
+memory: 2Gi
+Check pods:
+oc get pods
+Output:
+No resources found
+Check events:
+oc get events
+Message:
+maximum memory usage per Container is 1Gi
+but limit is 2Gi
+Meaning template successfully enforced limit.
+________________________________________
+2️⃣2️⃣ Final Architecture
+Flow:
+User → oc new-project
+        ↓
+ProjectRequest
+        ↓
+Project Template
+        ↓
+Creates
+   Namespace
+   RoleBinding
+   LimitRange
+________________________________________
+2️⃣3️⃣ Key Commands Summary
+Command	Purpose
+oc login	login to cluster
+oc new-project	create project
+oc edit clusterrolebinding	modify permissions
+oc create namespace	create namespace
+oc create -f file.yaml	create resource
+oc get events	view error messages
+oc adm create-bootstrap-project-template	generate template
+oc edit projects.config.openshift.io	configure project template
+
