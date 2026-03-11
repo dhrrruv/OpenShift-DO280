@@ -1,0 +1,116 @@
+Summary (Simple)
+1️⃣ Resource Quotas
+A ResourceQuota is used to limit the total resources used in a project (namespace).
+It restricts:
+•	CPU
+•	Memory
+•	Storage
+•	Number of objects (pods, services, etc.)
+Example
+requests.memory = 2Gi
+limits.memory = 4Gi
+Meaning:
+Resource	Limit
+Total memory requested	2Gi
+Total memory used (limit)	4Gi
+If the project exceeds these values → new pods cannot be created.
+👉 Used to prevent one project from consuming the whole cluster resources.
+________________________________________
+2️⃣ Cluster Resource Quotas
+Normal quotas apply per project.
+But sometimes admins want quotas across multiple projects.
+That is where ClusterResourceQuota is used.
+It works using labels.
+Example
+team=dev
+All projects with label team=dev share the same quota.
+________________________________________
+3️⃣ Limit Ranges
+LimitRange controls resources per container or pod inside a project.
+It defines:
+Setting	Meaning
+Default	Applied if user does not specify limits
+DefaultRequest	Default resource request
+Min	Minimum allowed resource
+Max	Maximum allowed resource
+Example
+defaultRequest: 256Mi
+default: 512Mi
+min: 128Mi
+max: 1Gi
+Meaning:
+Rule	Value
+Minimum memory	128Mi
+Default request	256Mi
+Default limit	512Mi
+Maximum memory	1Gi
+So if a developer creates a pod without specifying memory, OpenShift automatically assigns:
+Request = 256Mi
+Limit = 512Mi
+________________________________________
+4️⃣ Project Template
+Admins can create a custom project template so every new project automatically gets:
+•	ResourceQuota
+•	LimitRange
+•	RoleBindings
+•	Other resources
+Workflow
+User creates project
+        ↓
+OpenShift uses template
+        ↓
+Quota + LimitRange + Roles automatically created
+Example:
+oc new-project myapp
+Automatically creates:
+ResourceQuota
+LimitRange
+RoleBinding
+________________________________________
+5️⃣ Self-Provisioner Role
+The self-provisioner role controls who can create projects.
+Default behavior:
+All authenticated users can create projects
+Because they are bound to:
+ClusterRole: self-provisioner
+Admins can restrict it.
+Example
+Remove project creation access:
+oc adm policy remove-cluster-role-from-group \
+self-provisioner system:authenticated
+Then only specific users/groups can create projects.
+________________________________________
+🔑 Complete Flow (Important for Exam)
+Cluster Admin
+      │
+      ├── ResourceQuota → limits total resources in project
+      │
+      ├── LimitRange → limits resources per container
+      │
+      ├── Project Template → standard configuration for new projects
+      │
+      └── Self-Provisioner → controls who can create projects
+________________________________________
+🚀 Real Example (From Your Lab)
+Project template creates automatically:
+LimitRange
+  defaultRequest: 256Mi
+  default: 512Mi
+  min: 128Mi
+  max: 1Gi
+
+ResourceQuota
+  requests.memory: 2Gi
+  limits.memory: 4Gi
+So:
+1 pod → request 256Mi
+8 pods → request 2Gi
+Quota reached → 9th pod cannot start.
+________________________________________
+✅ Key idea
+Component	Controls
+ResourceQuota	Total resources per project
+LimitRange	Resource limits per container
+Project Template	Default project configuration
+Self-Provisioner	Who can create projects
+
