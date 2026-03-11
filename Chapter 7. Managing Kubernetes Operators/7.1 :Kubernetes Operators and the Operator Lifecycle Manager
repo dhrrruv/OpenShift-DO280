@@ -1,0 +1,248 @@
+Kubernetes Operators and the Operator Lifecycle Manager
+Objectives
+Describe the operator pattern and different approaches for installing and updating Kubernetes operators.
+
+1️⃣ What is the Operator Pattern ?
+In Kubernetes, we normally deploy apps using:
+•	Deployment
+•	StatefulSet
+•	DaemonSet
+•	Job
+•	CronJob
+These resources run containers, but they do not manage complex applications automatically.
+Example complex application:
+Application
+   │
+   ├── Database
+   ├── Backend API
+   └── Frontend UI
+Managing this manually is difficult.
+So Kubernetes uses Operators.
+Operator Definition
+An Operator is software that automates deployment, management, and lifecycle of complex applications in Kubernetes.
+It acts like a human administrator but automated.
+________________________________________
+2️⃣ How Operators Work
+Operators use Custom Resources (CR).
+Example:
+You create a resource like:
+kind: Database
+name: mydb
+size: 10Gi
+backup: daily
+The Operator reads this CR and automatically creates:
+StatefulSet
+PersistentVolume
+Services
+Backup CronJob
+Workflow
+User creates Custom Resource (CR)
+        ↓
+Operator watches the CR
+        ↓
+Operator creates required Kubernetes resources
+________________________________________
+3️⃣ Components of an Operator
+Every operator has two main parts.
+1️⃣ Custom Resource Definition (CRD)
+Defines a new Kubernetes object type.
+Example:
+Database
+Kafka
+Redis
+Prometheus
+2️⃣ Operator Controller
+A pod running in the cluster that:
+•	Watches CRs
+•	Creates workloads
+•	Maintains application state
+________________________________________
+4️⃣ Types of Operators in OpenShift
+OpenShift has three types.
+________________________________________
+1️⃣ Cluster Operators
+These manage OpenShift platform components.
+Examples:
+•	Authentication
+•	Web Console
+•	Networking
+•	Monitoring
+They are managed by the:
+Cluster Version Operator (CVO)
+CVO:
+•	Installs cluster operators
+•	Updates cluster operators
+•	Maintains cluster health
+Command
+oc get clusteroperator
+Example output:
+NAME            AVAILABLE   PROGRESSING   DEGRADED
+authentication   True        False         False
+console          True        False         False
+network          True        False         False
+Where:
+Column	Meaning
+Available	Operator working
+Progressing	Updating
+Degraded	Problem
+________________________________________
+2️⃣ Add-on Operators
+These add extra features to the cluster.
+Examples:
+•	Redis operator
+•	Kafka operator
+•	MongoDB operator
+•	Elasticsearch operator
+They are managed by:
+Operator Lifecycle Manager (OLM)
+OLM helps to:
+•	Install operators
+•	Update operators
+•	Remove operators
+________________________________________
+3️⃣ Third-party Operators
+External vendors can create operators and distribute them via:
+•	YAML manifests
+•	Helm charts
+•	OperatorHub
+•	Private catalogs
+________________________________________
+5️⃣ Operator Lifecycle Manager (OLM)
+OLM is a system inside OpenShift that manages operators.
+It handles:
+Install
+Update
+Upgrade
+Dependency management
+OLM uses custom resources to manage operators.
+________________________________________
+6️⃣ Operator Catalogs
+OLM installs operators from catalogs.
+A catalog is a container image that contains operator metadata.
+OpenShift provides four catalogs.
+Catalog	Description
+Red Hat	Official Red Hat supported operators
+Certified	Certified third-party vendors
+Community	Open-source operators
+Marketplace	Paid commercial operators
+Example:
+OperatorHub
+   │
+   ├── Redis Operator
+   ├── Kafka Operator
+   ├── MongoDB Operator
+   └── PostgreSQL Operator
+________________________________________
+7️⃣ PackageManifest
+When catalogs are loaded, OLM creates resources called:
+PackageManifest
+This resource shows:
+•	operator name
+•	versions
+•	descriptions
+•	install channels
+Command:
+oc get packagemanifest
+________________________________________
+8️⃣ Installing Operators
+Operators can be installed using:
+1️⃣ Web Console
+Path:
+Operators → OperatorHub
+Steps:
+Select operator
+Install
+Select namespace
+Choose update channel
+________________________________________
+2️⃣ CLI
+Using Subscription resource.
+Example:
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+Subscription tells OLM:
+Install operator
+Follow updates
+Track versions
+________________________________________
+9️⃣ Operator Workloads
+Each operator creates two types of workloads.
+1️⃣ Operator Pod
+Managed by OLM
+Example:
+mongodb-operator-controller
+2️⃣ Application Workloads
+Managed by the operator
+Example:
+mongodb-statefulset
+mongodb-pods
+mongodb-service
+________________________________________
+🔟 Operator Development Tools
+Developers can create operators using SDKs.
+1️⃣ Operator SDK
+Supports:
+•	Go
+•	Ansible
+•	Helm
+________________________________________
+2️⃣ Java Operator SDK
+Used to build operators using:
+•	Java
+•	Quarkus framework
+________________________________________
+🧠 Full Operator Architecture
+User
+  │
+  │ creates
+  ▼
+Custom Resource (CR)
+  │
+  ▼
+Operator Controller
+  │
+  │ creates
+  ▼
+Kubernetes Resources
+  ├── Pods
+  ├── StatefulSets
+  ├── Services
+  ├── Volumes
+  └── CronJobs
+________________________________________
+🔑 Key Commands (Important)
+Check cluster operators
+oc get clusteroperator
+________________________________________
+View operator catalogs
+oc get catalogsource -n openshift-marketplace
+________________________________________
+View available operators
+oc get packagemanifest
+________________________________________
+View installed operators
+oc get csv
+CSV = ClusterServiceVersion
+________________________________________
+🚀 Example Real Use Case
+Install MongoDB Operator
+Operator installed
+        ↓
+Create MongoDB CR
+        ↓
+Operator automatically creates:
+   StatefulSet
+   PVC
+   Service
+   Backup CronJob
+________________________________________
+Final Quick Summary
+Component	Role
+Operator	Automates application management
+CRD	Defines new Kubernetes resource
+CR	Instance of CRD
+CVO	Manages cluster operators
+OLM	Manages add-on operators
+Catalog	Repository of operators
+Subscription	Installs operator
+
