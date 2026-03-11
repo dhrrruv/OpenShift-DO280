@@ -1,0 +1,250 @@
+Lab: Enable Developer Self-service
+1️⃣ Goal of the Lab
+You configure OpenShift so that every new project automatically has resource restrictions.
+Restrictions:
+Project Level (Quota)
+Resource	Limit
+Total memory requests	2 Gi
+Total memory limits	4 Gi
+Meaning:
+All workloads in the project together cannot exceed these totals.
+________________________________________
+Container Level (LimitRange)
+Every container must follow:
+Property	Value
+Min memory	128 Mi
+Default request	256 Mi
+Default limit	512 Mi
+Max memory	1 Gi
+Meaning:
+Each container has its own limit, and the project also has total limits.
+________________________________________
+2️⃣ Lab Preparation
+Run:
+lab start selfservice-review
+This prepares:
+•	OpenShift cluster
+•	required lab files
+•	configuration files
+________________________________________
+3️⃣ Login as Admin
+oc login -u admin -p redhatocp https://api.ocp4.example.com:6443
+Purpose:
+Admin is needed to:
+•	create project templates
+•	configure cluster settings
+________________________________________
+4️⃣ Create Namespace to Design Template
+Namespace:
+oc create namespace template-test
+Purpose:
+We first design and test configuration in a namespace before putting it in a template.
+Think of it like:
+Testing area → then production template
+________________________________________
+5️⃣ Create ResourceQuota
+Command:
+oc create quota memory \
+--hard=requests.memory=2Gi,limits.memory=4Gi \
+-n template-test
+What is ResourceQuota?
+ResourceQuota limits total resources used by a project.
+Example:
+If quota is:
+requests.memory = 2Gi
+Then all pods combined cannot request more than 2Gi memory.
+________________________________________
+Explanation of command
+oc create quota memory
+Creates quota named memory.
+--hard=requests.memory=2Gi
+Total memory requested by all pods cannot exceed 2Gi.
+limits.memory=4Gi
+Total memory limits cannot exceed 4Gi.
+________________________________________
+6️⃣ Create LimitRange
+Edit file:
+~/DO280/labs/selfservice-review/limitrange.yaml
+Final configuration:
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: memory
+  namespace: template-test
+spec:
+  limits:
+  - min:
+      memory: 128Mi
+    defaultRequest:
+      memory: 256Mi
+    default:
+      memory: 512Mi
+    max:
+      memory: 1Gi
+    type: Container
+________________________________________
+What is LimitRange?
+LimitRange controls per-container limits.
+Example:
+Rule	Meaning
+min	container must request ≥128Mi
+defaultRequest	default memory request
+default	default memory limit
+max	cannot exceed 1Gi
+________________________________________
+Create the LimitRange
+oc create -f ~/DO280/labs/selfservice-review/limitrange.yaml
+Now the namespace has:
+ResourceQuota
+LimitRange
+________________________________________
+7️⃣ Test LimitRange
+Create deployment:
+oc create deployment -n template-test test-limits \
+--image registry.ocp4.example.com:8443/redhattraining/hello-world-nginx:v1.0
+This deployment does not specify resources.
+But LimitRange automatically applies defaults.
+Check:
+oc get pod -n template-test \
+-o jsonpath='{.items[0].spec.containers[0].resources}'
+Output:
+limits.memory = 512Mi
+requests.memory = 256Mi
+Meaning:
+LimitRange automatically added:
+request = 256Mi
+limit = 512Mi
+________________________________________
+8️⃣ Test ResourceQuota
+Scale deployment:
+oc scale deployment -n template-test test-limits --replicas=10
+Each pod uses:
+request = 256Mi
+limit = 512Mi
+Now calculate.
+________________________________________
+Memory Requests
+256Mi × 8 pods = 2Gi
+Quota reached.
+________________________________________
+Memory Limits
+512Mi × 8 pods = 4Gi
+Quota reached.
+________________________________________
+So deployment runs only 8 pods instead of 10.
+Check:
+oc get deployment -n template-test
+Result:
+READY 8/10
+________________________________________
+Check quota
+oc describe resourcequota -n template-test
+Output:
+limits.memory    4Gi
+requests.memory  2Gi
+Meaning:
+Quota fully used.
+________________________________________
+9️⃣ Create Project Template
+Generate template:
+oc adm create-bootstrap-project-template \
+-o yaml > ~/DO280/labs/selfservice-review/template.yaml
+This generates default project template.
+________________________________________
+🔟 Add LimitRange and ResourceQuota
+Export resources:
+oc get limitrange,quota -n template-test -o yaml
+Copy objects and add them to template.
+Important modifications:
+Remove:
+creationTimestamp
+resourceVersion
+uid
+status
+Replace namespace:
+template-test
+with
+${PROJECT_NAME}
+Why?
+Because the template must work for any project name.
+________________________________________
+1️⃣1️⃣ Final Template Structure
+Template includes:
+Object	Purpose
+Project	create namespace
+RoleBinding	give admin access
+LimitRange	container limits
+ResourceQuota	project limits
+________________________________________
+1️⃣2️⃣ Create Template in Cluster
+oc create \
+-f ~/DO280/labs/selfservice-review/template.yaml \
+-n openshift-config
+Namespace:
+openshift-config
+This namespace stores cluster configuration templates.
+________________________________________
+1️⃣3️⃣ Configure Cluster to Use Template
+Edit:
+oc edit projects.config.openshift.io cluster
+Add:
+spec:
+  projectRequestTemplate:
+    name: project-request
+Meaning:
+Whenever someone runs:
+oc new-project
+OpenShift applies this template.
+________________________________________
+1️⃣4️⃣ API Server Restart
+Check restart:
+watch oc get pod -n openshift-apiserver
+Wait until pods show:
+Running
+This means configuration is applied.
+________________________________________
+1️⃣5️⃣ Test the Template
+Create project:
+oc new-project template-validate
+Now OpenShift automatically creates:
+LimitRange
+ResourceQuota
+RoleBinding
+________________________________________
+1️⃣6️⃣ Verify Quota
+oc describe quota
+Output:
+limits.memory    4Gi
+requests.memory  2Gi
+________________________________________
+1️⃣7️⃣ Verify LimitRange
+oc describe limitrange
+Output:
+Min: 128Mi
+Default Request: 256Mi
+Default Limit: 512Mi
+Max: 1Gi
+________________________________________
+1️⃣8️⃣ Final Architecture
+Flow when user creates project:
+User
+  ↓
+oc new-project
+  ↓
+ProjectRequest
+  ↓
+Project Template
+  ↓
+Creates:
+  Namespace
+  RoleBinding
+  LimitRange
+  ResourceQuota
+________________________________________
+1️⃣9️⃣ Key Concepts From This Lab
+Concept	Purpose
+LimitRange	per container limits
+ResourceQuota	project total limits
+Project Template	default project configuration
+oc adm create-bootstrap-project-template	generate base template
+
