@@ -1,0 +1,297 @@
+The Project Template and the Self-provisioner Role
+Objectives
+Configure default quotas, limit ranges, role bindings, and other restrictions for new projects, and manage permissions for users to self-provision new projects.
+1️⃣ Project Creation in OpenShift
+Kubernetes Concept
+In Kubernetes, workloads are isolated using Namespaces.
+Example:
+namespace: dev
+namespace: prod
+But namespaces have two problems:
+Problem 1 — Security Risk
+Namespace metadata (labels/annotations) can affect security.
+Example:
+A policy controller might check namespace labels.
+If users modify namespace labels →
+they could bypass security policies.
+________________________________________
+Problem 2 — Listing Namespaces
+In Kubernetes RBAC:
+You cannot allow a user to list only some namespaces.
+If you give permission:
+list namespaces
+User can see all namespaces in the cluster.
+But organizations usually want:
+User sees only their namespaces
+________________________________________
+2️⃣ OpenShift Solution: Projects
+OpenShift introduces Projects.
+👉 Project = Namespace + access control improvements
+OpenShift API server does this:
+1.	Gets all namespaces
+2.	Filters namespaces user can access
+3.	Returns them as Projects
+So users only see their allowed projects.
+________________________________________
+3️⃣ ProjectRequest Resource
+OpenShift adds another resource:
+ProjectRequest
+This enables self-service project creation.
+Example command:
+oc new-project dev-project
+What happens internally:
+1️⃣ User creates ProjectRequest
+2️⃣ API server uses a project template
+3️⃣ Namespace is created
+4️⃣ Default permissions and policies are applied
+So the namespace is not empty.
+Admins can control what is created automatically.
+________________________________________
+4️⃣ Project Template
+A Project Template defines what resources are automatically created when a new project is created.
+Admins can add things like:
+•	Roles
+•	RoleBindings
+•	ResourceQuotas
+•	LimitRanges
+•	NetworkPolicies
+Purpose:
+✔ Enforce organization policies
+✔ Avoid manual setup for every project
+✔ Provide secure default configuration
+________________________________________
+5️⃣ Example Resources in Project Template
+1️⃣ RoleBindings
+Give permissions automatically.
+Default template gives:
+admin role
+to the user who created the project.
+Example:
+kind: RoleBinding
+metadata:
+  name: admin
+  namespace: ${PROJECT_NAME}
+roleRef:
+  kind: ClusterRole
+  name: admin
+subjects:
+- kind: User
+  name: ${PROJECT_ADMIN_USER}
+Meaning:
+User who requested the project becomes admin of that project.
+________________________________________
+2️⃣ Resource Quotas
+Limits resources in a project.
+Example:
+kind: ResourceQuota
+spec:
+  hard:
+    pods: "10"
+    requests.cpu: "2"
+    requests.memory: 4Gi
+Meaning:
+Project cannot use more than:
+•	10 pods
+•	2 CPU
+•	4GB memory
+________________________________________
+3️⃣ LimitRanges
+Provide default resource values for containers.
+Example:
+kind: LimitRange
+spec:
+  limits:
+  - type: Container
+    defaultRequest:
+      cpu: 250m
+      memory: 256Mi
+    default:
+      cpu: 500m
+      memory: 512Mi
+Purpose:
+If developer forgets to define resources → OpenShift assigns defaults.
+________________________________________
+4️⃣ Network Policies
+Control pod-to-pod traffic.
+Example:
+Allow only pods in same project to communicate.
+________________________________________
+6️⃣ Creating a Project Template
+First generate the default template.
+Command:
+oc adm create-bootstrap-project-template -o yaml > template.yaml
+This generates a YAML file.
+________________________________________
+7️⃣ Default Template Structure
+Important sections:
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: project-request
+This defines a template object.
+________________________________________
+objects section
+Defines resources created in the new project.
+Example:
+objects:
+- kind: Project
+- kind: RoleBinding
+These resources are automatically created.
+________________________________________
+parameters section
+Defines variables used in template.
+Example:
+parameters:
+- name: PROJECT_NAME
+- name: PROJECT_DISPLAYNAME
+- name: PROJECT_DESCRIPTION
+- name: PROJECT_ADMIN_USER
+- name: PROJECT_REQUESTING_USER
+When a user creates a project:
+oc new-project dev
+OpenShift replaces:
+${PROJECT_NAME}
+with
+dev
+________________________________________
+8️⃣ Steps to Build Custom Project Template
+Recommended process:
+Step 1
+Create a test namespace.
+oc new-project test-project
+________________________________________
+Step 2
+Create required resources.
+Example:
+oc create quota
+oc create limitrange
+oc create networkpolicy
+Test them.
+________________________________________
+Step 3
+Export resources in YAML.
+Command:
+oc get limitrange,resourcequota -o yaml
+________________________________________
+Step 4
+Edit YAML
+Remove fields like:
+status
+creationTimestamp
+resourceVersion
+Replace namespace with:
+${PROJECT_NAME}
+________________________________________
+Step 5
+Add them to template.
+________________________________________
+9️⃣ Apply the Template
+Create the template in OpenShift.
+Command:
+oc create -f template.yaml -n openshift-config
+________________________________________
+🔟 Configure OpenShift to Use Template
+Edit project configuration.
+Command:
+oc edit project.config.openshift.io/cluster
+Add:
+spec:
+  projectRequestTemplate:
+    name: project-request
+Meaning:
+Every time a user creates a project → this template is used.
+________________________________________
+1️⃣1️⃣ API Server Restart
+After configuration:
+OpenShift rolls out a new API server deployment.
+Location:
+openshift-apiserver namespace
+Once rollout finishes:
+New projects use the template.
+________________________________________
+1️⃣2️⃣ Reverting to Default Template
+Remove the configuration.
+Edit:
+oc edit project.config.openshift.io/cluster
+Change:
+spec: {}
+Now default behavior returns.
+________________________________________
+1️⃣3️⃣ Self-Provisioner Role
+Self-provisioner role allows users to create projects themselves.
+Default behavior:
+All logged-in users can create projects.
+Binding:
+system:authenticated:oauth
+Meaning:
+Any authenticated user can run:
+oc new-project myproject
+________________________________________
+1️⃣4️⃣ Check Self-Provisioner Role
+Command:
+oc describe clusterrolebinding self-provisioners
+Example output:
+Role: self-provisioner
+Subjects:
+Group system:authenticated:oauth
+Meaning:
+All authenticated users have this role.
+________________________________________
+1️⃣5️⃣ Important Annotation
+rbac.authorization.kubernetes.io/autoupdate: true
+Purpose:
+If API server restarts → default roles are restored automatically.
+To modify role binding → disable this.
+________________________________________
+1️⃣6️⃣ Disable Self-Provisioning
+Step 1:
+Disable auto updates.
+oc annotate clusterrolebinding/self-provisioners \
+rbac.authorization.kubernetes.io/autoupdate=false
+________________________________________
+Step 2:
+Remove users.
+oc patch clusterrolebinding.rbac self-provisioners \
+-p '{"subjects": null}'
+Now users cannot create projects.
+________________________________________
+1️⃣7️⃣ Allow Only Specific Group
+Instead of everyone:
+Allow only a group.
+Edit:
+oc edit clusterrolebinding self-provisioners
+Example:
+subjects:
+- kind: Group
+  name: provisioners
+Now only this group can create projects.
+________________________________________
+1️⃣8️⃣ Important Warning
+Even if self-provisioning is disabled:
+Users with namespace permissions can still run:
+oc create namespace
+That namespace does not use project template.
+________________________________________
+1️⃣9️⃣ Quick Architecture Flow
+User runs
+oc new-project dev
+↓
+Creates
+ProjectRequest
+↓
+OpenShift API server
+↓
+Applies
+Project Template
+↓
+Creates
+Namespace
+RoleBindings
+ResourceQuotas
+LimitRanges
+NetworkPolicies
+________________________________________
+2️⃣0️⃣ One-Line Exam Definition
+A Project Template in OpenShift defines the default resources such as role bindings, quotas, limit ranges, and policies that are automatically created when a new project is requested.
+
+
