@@ -1,0 +1,283 @@
+Guided Exercise: Install Operators Using the Web Console
+Objective of the Lab
+In this lab you will:
+1.	Install an operator from OperatorHub
+2.	Observe resources created by Operator Lifecycle Manager (OLM)
+3.	Create a Custom Resource
+4.	See how the operator creates workloads automatically
+5.	Uninstall the operator
+________________________________________
+1️⃣ Prepare the Lab Environment
+Run:
+lab start operators-web
+What this command does
+It prepares the training cluster environment:
+•	Starts required lab services
+•	Ensures cluster connectivity
+•	Creates required resources
+•	Resets environment for this exercise
+So you start with a clean cluster environment.
+________________________________________
+2️⃣ Login to the OpenShift Web Console
+Open browser:
+https://console-openshift-console.apps.ocp4.example.com
+Login credentials:
+username: admin
+password: redhatocp
+Choose Red Hat Identity Management authentication.
+________________________________________
+3️⃣ Install the File Integrity Operator
+Go to:
+Operators → OperatorHub
+Search:
+integrity
+Select:
+File Integrity Operator
+Click:
+Install
+________________________________________
+4️⃣ Operator Installation Options (Used in the Lab)
+Update Channel
+Only one channel is available because the lab cluster is disconnected.
+Disconnected cluster means:
+•	No internet
+•	Operators come from a mirror registry
+Mirror registry = local copy of container images.
+________________________________________
+Installation Mode
+Default option:
+All namespaces on the cluster
+Meaning:
+The operator monitors all namespaces for custom resources.
+________________________________________
+Installed Namespace
+Operator will run in:
+openshift-file-integrity
+Important difference:
+Component	Location
+Operator workload	openshift-file-integrity namespace
+Resources it monitors	All namespaces
+________________________________________
+Monitoring
+Do NOT enable monitoring in this lab.
+Monitoring would integrate the operator with cluster monitoring stack.
+________________________________________
+Start Installation
+Click:
+Install
+OLM now installs the operator.
+________________________________________
+5️⃣ What OLM Creates During Installation
+When you install an operator, OLM automatically creates resources.
+Main resources:
+Resource	Purpose
+Subscription	Controls operator updates
+InstallPlan	Defines installation steps
+ClusterServiceVersion (CSV)	Operator version description
+OperatorGroup	Defines watched namespaces
+You can verify them using CLI.
+________________________________________
+Check CSV
+oc get csv -n openshift-file-integrity
+Example output:
+file-integrity-operator.v1.0.0   Succeeded
+Meaning installation finished successfully.
+________________________________________
+Check Subscription
+oc get subscription -n openshift-file-integrity
+Shows update channel configuration.
+________________________________________
+Check InstallPlan
+oc get installplan -n openshift-file-integrity
+Defines installation steps executed by OLM.
+________________________________________
+Check Operator Pods
+oc get pods -n openshift-file-integrity
+Example:
+file-integrity-operator-xxxxx
+This is the operator controller.
+________________________________________
+6️⃣ Operator Details Page
+After installation click:
+View Operator
+Important tabs:
+________________________________________
+Details Tab
+Shows:
+•	Operator version
+•	Description
+•	CSV information
+Scroll to Conditions.
+Important status:
+Succeeded
+Meaning installation completed.
+________________________________________
+YAML Tab
+Displays the ClusterServiceVersion YAML.
+Equivalent command:
+oc get csv -n openshift-file-integrity -o yaml
+CSV describes:
+•	Operator version
+•	APIs supported
+•	deployments
+•	permissions
+________________________________________
+Subscription Tab
+Shows:
+•	Update channel
+•	Update approval
+•	InstallPlan
+Command:
+oc get subscription -n openshift-file-integrity
+If update approval is manual, you approve updates here.
+________________________________________
+7️⃣ Creating a Custom Resource
+Operators are used through Custom Resources (CR).
+The File Integrity Operator manages:
+FileIntegrity
+resource.
+Go to:
+File Integrity tab
+Click:
+Create FileIntegrity
+________________________________________
+YAML Configuration
+Modify:
+gracePeriod: 60
+Example YAML:
+apiVersion: fileintegrity.openshift.io/v1alpha1
+kind: FileIntegrity
+metadata:
+  name: example-fileintegrity
+spec:
+  gracePeriod: 60
+Meaning:
+Operator checks node filesystem every 60 seconds.
+________________________________________
+8️⃣ What the Operator Does After CR Creation
+Once the CR is created, the operator automatically:
+1.	Creates DaemonSet
+2.	Runs file integrity check on nodes
+3.	Generates reports
+________________________________________
+Check Node Status
+Go to:
+FileIntegrityNodeStatus tab
+Example resource:
+example-fileintegrity-master01
+This shows file verification results for nodes.
+________________________________________
+9️⃣ Simulate File System Change
+Now you intentionally modify node filesystem.
+Login to cluster:
+oc login -u admin -p redhatocp https://api.ocp4.example.com:6443
+________________________________________
+Debug Node
+Run:
+oc debug node/master01 -- touch /host/etc/foobar
+Explanation:
+Part	Meaning
+oc debug	start debug container
+node/master01	target node
+touch /host/etc/foobar	create new file
+This changes node filesystem.
+Operator should detect this change.
+________________________________________
+🔟 View Integrity Report
+Go to:
+Workloads → ConfigMaps
+Namespace:
+openshift-file-integrity
+Search:
+example
+Open:
+aide-example-fileintegrity-master01-failed
+Inside Data section you see report showing:
+file changes detected
+Meaning operator detected filesystem modification.
+________________________________________
+1️⃣1️⃣ Understand Operator Workloads vs Managed Workloads
+This is a very important exam concept.
+________________________________________
+Operator Workload
+Go to:
+Workloads → Deployments
+Deployment:
+file-integrity-operator
+This deployment:
+•	watches custom resources
+•	manages workloads
+________________________________________
+Operator Managed Workload
+Go to:
+Workloads → DaemonSets
+Example:
+aide-example-fileintegrity
+Created automatically after you created FileIntegrity CR.
+Purpose:
+Run integrity checks on every node.
+________________________________________
+Why DaemonSet?
+Because file integrity must run on every node.
+DaemonSet ensures:
+1 pod per node
+________________________________________
+1️⃣2️⃣ Uninstall the Operator
+Go to:
+Operators → Installed Operators
+Select:
+File Integrity Operator
+Click:
+Actions → Uninstall Operator
+Enable option:
+Delete all operand instances
+Operand = resources created by operator.
+Example:
+FileIntegrity CR
+DaemonSets
+________________________________________
+1️⃣3️⃣ Delete the Namespace
+Operator created namespace:
+openshift-file-integrity
+Delete it:
+Home → Projects
+Search:
+openshift-file-integrity
+Delete project.
+________________________________________
+1️⃣4️⃣ Finish the Lab
+Run:
+lab finish operators-web
+Purpose:
+•	clean lab resources
+•	reset environment
+•	prepare for next lab
+________________________________________
+🔑 Important Concepts for DO280 Exam
+Remember these:
+Concept	Explanation
+OperatorHub	Marketplace for operators
+OLM	Manages operator lifecycle
+CSV	Operator version metadata
+Subscription	Defines update behavior
+InstallPlan	Installation instructions
+Custom Resource	Defines application instance
+Operator	Controller that manages resources
+________________________________________
+🔥 Complete Flow of the Lab
+Install Operator
+        ↓
+OLM creates
+  - CSV
+  - Subscription
+  - InstallPlan
+        ↓
+Operator Deployment created
+        ↓
+Create Custom Resource
+        ↓
+Operator creates DaemonSet
+        ↓
+DaemonSet checks node filesystem
+        ↓
+
