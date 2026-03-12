@@ -1,0 +1,205 @@
+Controlling Application Permissions with Security Context Constraints
+Objectives
+Create service accounts and apply permissions, and manage security context constraints.
+1. Controlling Application Permissions with Security Context Constraints (SCC)
+What is Security Context Constraints (SCC)?
+Security Context Constraints (SCC) is a security mechanism in OpenShift that controls what a pod is allowed to do on the host system.
+In simple words:
+👉 SCC limits the permissions of containers so they cannot harm the host or the cluster.
+It protects the node (host machine) from malicious or unsafe containers.
+________________________________________
+Why SCC is Important
+Containers downloaded from public registries may try to:
+•	Run as root user
+•	Access host filesystem
+•	Use privileged ports
+•	Use special Linux capabilities
+If not restricted, this can compromise the cluster.
+So OpenShift applies SCC policies to control container permissions.
+________________________________________
+2. What SCC Controls
+SCC controls access to host resources such as:
+1️⃣ Running privileged containers
+Allows containers to run with root-level host access.
+Example:
+privileged: true
+This gives container full control over the node, which is dangerous.
+________________________________________
+2️⃣ Extra Linux Capabilities
+Linux capabilities are special permissions like:
+•	NET_ADMIN
+•	SYS_ADMIN
+These allow containers to control network or system operations.
+________________________________________
+3️⃣ Host directories as volumes
+Containers normally cannot access host filesystem.
+Example restricted path:
+/etc
+/var
+/root
+SCC decides whether container can mount host directories.
+________________________________________
+4️⃣ Changing SELinux context
+OpenShift uses SELinux security labeling.
+SCC controls whether containers can change their SELinux context.
+________________________________________
+5️⃣ Changing User ID (UID)
+Containers normally run with random UID for security.
+Some containers require specific UID (like 1000).
+SCC decides if this is allowed.
+________________________________________
+3. Default SCCs in OpenShift
+You can list SCCs with this command:
+oc get scc
+Example output:
+anyuid
+hostaccess
+hostnetwork
+node-exporter
+nonroot
+privileged
+restricted
+Each SCC has different security levels.
+________________________________________
+Important SCC Types
+1️⃣ restricted (Default)
+Most secure.
+Pods:
+•	run with random UID
+•	cannot run as root
+•	cannot access host resources
+Used by most applications.
+________________________________________
+2️⃣ nonroot
+Containers cannot run as root user.
+Must run with UID ≠ 0.
+________________________________________
+3️⃣ anyuid
+Allows containers to run as any user ID, including root.
+Used when applications require specific UID.
+________________________________________
+4️⃣ privileged
+Most powerful.
+Allows containers to:
+•	access host
+•	run privileged operations
+•	use host devices
+⚠ Very dangerous if misused.
+________________________________________
+4. Checking Which SCC a Pod Uses
+Command:
+oc describe pod POD_NAME -n NAMESPACE
+Example:
+oc describe pod console-5df4fcbb47-67c52 -n openshift-console
+Then filter SCC:
+grep scc
+Example output:
+openshift.io/scc: restricted
+Meaning:
+👉 Pod is using restricted SCC
+________________________________________
+5. Why Some Containers Fail with Restricted SCC
+Some container images require:
+•	specific user ID
+•	root privileges
+•	privileged ports (<1024)
+Example:
+Port 80 requires root permission.
+But restricted SCC runs containers with random UID, so the application fails.
+________________________________________
+6. Checking Which SCC Can Run a Pod
+Command:
+oc get deployment deployment-name -o yaml | \
+oc adm policy scc-subject-review -f -
+Purpose:
+✔ Shows which SCCs are compatible with the deployment
+________________________________________
+7. Solution: Use Service Account with SCC
+To run containers with different SCC permissions, OpenShift uses Service Accounts.
+Flow:
+Pod → Service Account → SCC
+Meaning:
+Service account receives SCC permission.
+________________________________________
+Step 1 — Create Service Account
+Command:
+oc create serviceaccount service-account-name
+Example:
+oc create serviceaccount myserviceaccount
+If creating in another namespace:
+oc create serviceaccount myserviceaccount -n myproject
+________________________________________
+Step 2 — Assign SCC to Service Account
+Command:
+oc adm policy add-scc-to-user SCC -z service-account
+Example:
+oc adm policy add-scc-to-user anyuid -z myserviceaccount
+Meaning:
+Give anyuid SCC to the service account.
+⚠ Only cluster administrators can run this command.
+________________________________________
+Step 3 — Apply Service Account to Deployment
+Command:
+oc set serviceaccount deployment/deployment-name service-account-name
+Example:
+oc set serviceaccount deployment/myapp myserviceaccount
+Result:
+•	Deployment redeploys pods
+•	Pods now run with new SCC
+________________________________________
+8. Privileged Containers
+Some applications need deep access to host system.
+Example:
+•	S2I builder containers
+•	monitoring agents
+•	storage drivers
+•	networking tools
+These containers require:
+privileged SCC
+Privileged containers can:
+•	access host kernel
+•	modify system
+•	control network
+•	access devices
+⚠ This is high security risk.
+Therefore only specific service accounts should have this access.
+________________________________________
+9. Important Security Warning
+Giving less restrictive SCC like:
+•	anyuid
+•	privileged
+can:
+❌ reduce cluster security
+❌ allow containers to escape isolation
+❌ expose host system
+So always follow:
+✔ Principle of least privilege
+________________________________________
+Simple Architecture
+Pod
+ │
+ │ uses
+ ▼
+Service Account
+ │
+ │ assigned
+ ▼
+Security Context Constraint (SCC)
+ │
+ │ controls
+ ▼
+Host access permissions
+________________________________________
+Short Summary
+SCC in OpenShift:
+•	controls container security permissions
+•	protects host system
+•	restricts privileged operations
+Steps to allow special permissions:
+1️⃣ Create service account
+oc create serviceaccount sa-name
+2️⃣ Assign SCC
+oc adm policy add-scc-to-user anyuid -z sa-name
+3️⃣ Attach service account to deployment
+oc set serviceaccount deployment/app sa-name
+
