@@ -1,0 +1,351 @@
+Installing Operators Using CLI (OpenShift)
+Objective
+Install and manage operators using CLI (oc command) instead of the web console.
+In CLI installation you mainly work with OLM resources like:
+•	CatalogSource
+•	PackageManifest
+•	OperatorGroup
+•	Subscription
+•	InstallPlan
+•	ClusterServiceVersion (CSV)
+________________________________________
+1️⃣ Steps to Install an Operator (CLI Flow)
+To install an operator with CLI you generally follow this sequence:
+Find operator
+     ↓
+Check operator details
+     ↓
+Choose channel
+     ↓
+Create namespace (optional)
+     ↓
+Create OperatorGroup
+     ↓
+Create Subscription
+     ↓
+OLM automatically creates:
+  - InstallPlan
+  - CSV
+  - Operator deployment
+Important concept:
+👉 Admin only creates TWO resources
+OperatorGroup
+Subscription
+OLM automatically creates everything else.
+________________________________________
+2️⃣ Operator Lifecycle Manager (OLM) Resources
+OLM uses several resource types.
+________________________________________
+1️⃣ CatalogSource
+CatalogSource tells OpenShift where operators are stored.
+Example command:
+oc get catalogsource -n openshift-marketplace
+Example output:
+NAME              DISPLAY
+gls-catalog-cs    GLS Operator Catalog
+Meaning:
+•	Operators come from this catalog registry.
+Namespace:
+openshift-marketplace
+________________________________________
+2️⃣ PackageManifest
+PackageManifest contains metadata of available operators.
+List available operators:
+oc get packagemanifests
+Example output:
+compliance-operator
+file-integrity-operator
+metallb-operator
+lvms-operator
+kubevirt-hyperconverged
+This tells you:
+👉 Which operators you can install.
+________________________________________
+3️⃣ Check Operator Details
+To install an operator you need details like:
+•	channel
+•	source
+•	namespace
+•	install modes
+Command:
+oc describe packagemanifest lvms-operator -n openshift-marketplace
+This shows detailed operator information.
+________________________________________
+Important Fields
+1️⃣ Catalog Source
+Catalog Source: gls-catalog-cs
+Catalog Source Namespace: openshift-marketplace
+This will be used in subscription YAML.
+________________________________________
+2️⃣ Available Channels
+Example:
+stable-4.18
+Channel = version stream for updates
+Example channels:
+stable
+fast
+preview
+________________________________________
+3️⃣ Current CSV
+lvms-operator.v4.18.1
+CSV = operator version.
+________________________________________
+4️⃣ Description
+Shows what the operator does.
+Example:
+Logical volume manager storage
+________________________________________
+5️⃣ Install Modes
+Shows supported namespace modes.
+Example:
+OwnNamespace
+SingleNamespace
+MultiNamespace
+AllNamespaces
+Some operators support only specific modes.
+________________________________________
+6️⃣ Documentation Links
+Example:
+https://github.com/openshift/lvm-operator
+Always check documentation before installation.
+________________________________________
+4️⃣ Create Namespace (Optional)
+Operators run in a namespace.
+Example:
+oc create namespace openshift-storage
+Some operators require specific namespaces.
+Example:
+openshift-storage
+openshift-operators
+________________________________________
+5️⃣ OperatorGroup
+OperatorGroup defines which namespaces the operator watches.
+Example YAML:
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: storage-operators
+  namespace: openshift-storage
+spec:
+  targetNamespaces:
+  - openshift-storage
+Apply it:
+oc apply -f operatorgroup.yaml
+________________________________________
+What this does
+Operator will monitor:
+openshift-storage
+for custom resources.
+________________________________________
+Special Case
+Namespace:
+openshift-operators
+already contains an OperatorGroup:
+global-operators
+This monitors all namespaces.
+So normally you don't create a new OperatorGroup there.
+________________________________________
+6️⃣ Create Subscription
+Subscription tells OLM:
+Install this operator
+Example YAML:
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: lvms-operator
+  namespace: openshift-storage
+spec:
+  channel: stable-4.18
+  name: lvms-operator
+  source: gls-catalog-cs
+  sourceNamespace: openshift-marketplace
+  installPlanApproval: Automatic
+Apply:
+oc apply -f subscription.yaml
+________________________________________
+Important Fields
+Field	Meaning
+name	operator package name
+channel	update channel
+source	catalog source
+sourceNamespace	where catalog exists
+installPlanApproval	automatic/manual updates
+________________________________________
+7️⃣ What Happens After Subscription
+Once subscription is created, OLM automatically creates:
+InstallPlan
+CSV
+Operator deployment
+________________________________________
+8️⃣ InstallPlan
+InstallPlan describes how the operator will be installed or updated.
+Check:
+oc get installplan -n openshift-storage
+Example output:
+install-pmh78
+________________________________________
+Manual Approval
+If approval mode is:
+Manual
+You must approve installation.
+Approve using:
+oc patch installplan install-pmh78 \
+--type merge \
+-p '{"spec":{"approved":true}}' \
+-n openshift-storage
+________________________________________
+9️⃣ ClusterServiceVersion (CSV)
+CSV represents operator version installed.
+Check:
+oc get csv -n openshift-storage
+Example:
+lvms-operator.v4.18.1
+CSV contains:
+•	permissions
+•	CRDs
+•	deployments
+•	metadata
+________________________________________
+🔟 Operator Resource
+OLM also creates an Operator resource.
+Check:
+oc describe operator file-integrity-operator
+Example output shows:
+InstallPlan reference
+Subscription reference
+________________________________________
+1️⃣1️⃣ Managing Operator Updates
+Updates are controlled by:
+spec.installPlanApproval
+Two modes:
+________________________________________
+Automatic Updates
+installPlanApproval: Automatic
+OLM automatically updates operator.
+________________________________________
+Manual Updates
+installPlanApproval: Manual
+Admin must approve update.
+________________________________________
+Check pending updates
+oc get installplan -n openshift-file-integrity
+Example:
+install-z5k2a   file-integrity-operator.v4.18.1   Manual   false
+Meaning update waiting for approval.
+________________________________________
+Approve update
+oc patch installplan install-z5k2a \
+--type merge \
+-p '{"spec":{"approved":true}}' \
+-n openshift-file-integrity
+________________________________________
+1️⃣2️⃣ Change Update Channel
+You can change the operator channel.
+Example:
+oc patch subscription file-integrity-operator \
+-n openshift-file-integrity \
+--type merge \
+-p '{"spec":{"channel":"stable"}}'
+If automatic updates enabled:
+👉 update may start immediately.
+________________________________________
+1️⃣3️⃣ Using Operators
+Operators manage Custom Resources.
+Example:
+Operator creates CRD like:
+metallbs.metallb.io
+You create custom resource instance to use operator.
+________________________________________
+Check CRDs created by operator
+Example command:
+oc get csv metallb-operator.v4.18.0 \
+-o jsonpath="{.spec.customresourcedefinitions.owned[*].name}"
+Output example:
+ipaddresspools.metallb.io
+bgppeers.metallb.io
+l2advertisements.metallb.io
+________________________________________
+View CRD explanation
+oc explain metallb
+or
+oc explain ipaddresspool
+________________________________________
+1️⃣4️⃣ Troubleshooting Operators
+If installation fails check:
+________________________________________
+CSV status
+oc get csv
+Look for:
+Succeeded
+Failed
+Pending
+________________________________________
+InstallPlan
+oc get installplan
+Check approval status.
+________________________________________
+Operator Pods
+oc get pods -n <operator-namespace>
+Example:
+file-integrity-operator
+________________________________________
+Pod Logs
+oc logs <operator-pod>
+________________________________________
+Events
+oc get events
+________________________________________
+1️⃣5️⃣ Operator Workloads vs Managed Workloads
+Very important concept.
+________________________________________
+Operator Workload
+Created by OLM.
+Example:
+file-integrity-operator deployment
+Purpose:
+monitor custom resources
+________________________________________
+Managed Workloads
+Created by operator.
+Example:
+daemonsets
+statefulsets
+pods
+Example:
+aide-fileintegrity daemonset
+These run actual application tasks.
+________________________________________
+🔑 Key Exam Concepts
+Remember these:
+Resource	Role
+CatalogSource	operator repository
+PackageManifest	operator metadata
+OperatorGroup	namespace scope
+Subscription	installs operator
+InstallPlan	installation/update plan
+CSV	operator version definition
+CRD	operator API
+Custom Resource	instance of operator
+________________________________________
+🔥 Complete CLI Operator Installation Flow
+oc get catalogsource
+        ↓
+oc get packagemanifests
+        ↓
+oc describe packagemanifest
+        ↓
+Create Namespace
+        ↓
+Create OperatorGroup
+        ↓
+Create Subscription
+        ↓
+OLM creates:
+  InstallPlan
+  CSV
+  Operator Deployment
+        ↓
+Create Custom Resource
+        ↓
+Operator deploys application
+
