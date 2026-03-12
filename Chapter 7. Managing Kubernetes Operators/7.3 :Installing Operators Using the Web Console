@@ -1,0 +1,284 @@
+Installing Operators Using the Web Console (OpenShift)
+1️⃣ What is an Operator?
+An Operator in Red Hat OpenShift / Kubernetes is a software extension that automates deployment, configuration, management, and updates of applications.
+Think of an operator like an automated administrator for an application.
+Example
+Instead of manually managing a database:
+•	Install DB
+•	Configure storage
+•	Handle scaling
+•	Perform upgrades
+The Operator automatically manages all this.
+Example Operators:
+•	MySQL Operator
+•	Prometheus Operator
+•	Elasticsearch Operator
+________________________________________
+2️⃣ Operator Lifecycle Manager (OLM)
+The Operator Lifecycle Manager (OLM) manages the complete lifecycle of operators.
+Lifecycle includes:
+•	Installation
+•	Updates
+•	Version control
+•	Dependencies
+•	Removal
+OLM automatically manages operators in the cluster.
+OLM manages these resources
+Resource	Purpose
+CSV (ClusterServiceVersion)	Describes a specific operator version
+Subscription	Defines how operator updates happen
+InstallPlan	Plan used to install/update operator
+OperatorGroup	Defines which namespaces operator watches
+________________________________________
+3️⃣ OperatorHub
+OperatorHub is the marketplace for operators.
+In OpenShift Web Console:
+Operators → OperatorHub
+You can:
+•	Search operators
+•	View operator info
+•	Install operators
+You can filter operators by:
+•	Category
+•	Provider
+•	Source
+•	Subscription required
+________________________________________
+4️⃣ Steps to Install an Operator (Web Console)
+Step 1
+Go to
+Operators → OperatorHub
+Step 2
+Select an operator.
+Example:
+MySQL Operator
+Prometheus Operator
+Step 3
+Click
+Install
+This opens the Install Operator Wizard.
+________________________________________
+5️⃣ Important Installation Options
+1️⃣ Update Channel
+Defines which version stream you receive updates from.
+Examples:
+Channel	Meaning
+stable	Stable production versions
+fast	Faster updates but less stable
+preview	Experimental versions
+Example
+channel: stable
+Best practice → Use stable
+________________________________________
+2️⃣ Installation Mode
+Determines which namespaces the operator monitors.
+Option 1 (Most common)
+All namespaces on the cluster
+Meaning:
+Operator watches all namespaces.
+Example:
+User creates MySQL custom resource in namespace:
+dev-project
+Operator automatically deploys MySQL there.
+________________________________________
+Option 2
+A specific namespace
+Operator works only in that namespace.
+Example
+database-operators
+________________________________________
+3️⃣ Installed Namespace
+Defines where the operator itself runs.
+Example namespaces:
+openshift-operators
+operators
+custom namespace
+Important:
+Operator workload runs here, but it may manage apps in other namespaces.
+Example
+Operator namespace → openshift-operators
+Database created → dev-project namespace
+________________________________________
+4️⃣ Update Approval
+Controls operator updates.
+Automatic
+OLM updates operator automatically.
+Automatic
+Manual
+Admin must approve update.
+Manual
+Then you approve InstallPlans.
+________________________________________
+6️⃣ What Happens During Installation
+When you click Install, OpenShift creates:
+1️⃣ Subscription
+Defines update channel and approval.
+Example command:
+oc get subscription
+________________________________________
+2️⃣ OperatorGroup
+Defines namespaces operator watches.
+Command:
+oc get operatorgroup
+________________________________________
+3️⃣ InstallPlan
+Installation execution plan.
+Command:
+oc get installplan
+________________________________________
+4️⃣ ClusterServiceVersion (CSV)
+Represents operator version.
+Command:
+oc get csv
+Example output:
+NAME                 DISPLAY                VERSION
+mysql-operator.v1    MySQL Operator         1.0
+________________________________________
+7️⃣ Viewing Installed Operators
+In Web Console:
+Operators → Installed Operators
+Shows:
+•	Operator status
+•	Operator version
+•	Updates available
+________________________________________
+8️⃣ Operator Details Page
+Click an operator to view details.
+Important tabs:
+________________________________________
+1️⃣ Details Tab
+Shows:
+•	Operator version
+•	Operator deployments
+•	Operator description
+________________________________________
+2️⃣ YAML Tab
+Displays CSV YAML configuration.
+Equivalent command:
+oc get csv <operator-name> -o yaml
+Example
+oc get csv mysql-operator.v1 -o yaml
+________________________________________
+3️⃣ Subscription Tab
+Controls:
+•	Update channel
+•	Update approval
+•	Install plans
+Command:
+oc get subscription
+________________________________________
+4️⃣ Events Tab
+Shows installation events.
+CLI equivalent:
+oc get events
+________________________________________
+9️⃣ Custom Resources (CR)
+Operators are controlled through Custom Resources (CR).
+A Custom Resource defines what application instance to deploy.
+Example:
+Create a MySQL database.
+CR Example YAML:
+apiVersion: mysql.example.com/v1
+kind: MySQL
+metadata:
+  name: mydatabase
+spec:
+  storage: 10Gi
+  version: 8.0
+Operator reads this and automatically:
+•	Creates pods
+•	Creates storage
+•	Configures database
+________________________________________
+Create CR via Web Console
+Go to:
+Operators → Installed Operators → Operator → Custom Resource tab
+Click
+Create
+You can use:
+YAML View
+Write full YAML.
+________________________________________
+Form View
+Fill fields like form.
+Example fields:
+•	database size
+•	version
+•	replicas
+________________________________________
+🔟 Useful CLI Commands for Operators
+View operators
+oc get csv
+________________________________________
+View subscriptions
+oc get subscription
+________________________________________
+View install plans
+oc get installplan
+________________________________________
+View operator groups
+oc get operatorgroup
+________________________________________
+View operator pods
+oc get pods -n openshift-operators
+________________________________________
+Describe CSV
+oc describe csv <name>
+Example
+oc describe csv mysql-operator.v1
+________________________________________
+View operator logs
+oc logs <pod-name>
+________________________________________
+1️⃣1️⃣ Troubleshooting Operators
+If operator fails:
+Check these resources.
+________________________________________
+1️⃣ CSV Status
+oc get csv
+Check status:
+Succeeded
+Pending
+Failed
+________________________________________
+2️⃣ InstallPlan
+oc get installplan
+________________________________________
+3️⃣ Subscription
+oc get subscription
+________________________________________
+4️⃣ Operator Pod Logs
+oc logs <operator-pod>
+________________________________________
+5️⃣ Events
+oc get events
+________________________________________
+1️⃣2️⃣ Important Exam Concepts
+Remember these keywords for DO280 exam:
+Term	Meaning
+Operator	Automates application management
+OLM	Manages operator lifecycle
+OperatorHub	Marketplace for operators
+CSV	Operator version definition
+Subscription	Defines update behavior
+InstallPlan	Plan to install/update operator
+OperatorGroup	Defines namespaces monitored
+Custom Resource	Defines application instance
+________________________________________
+✅ Simple Flow
+OperatorHub
+     ↓
+Install Operator
+     ↓
+OLM creates
+   - Subscription
+   - InstallPlan
+   - OperatorGroup
+   - CSV
+     ↓
+Operator installed
+     ↓
+Create Custom Resource
+     ↓
+Operator deploys application
+
